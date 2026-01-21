@@ -1,5 +1,6 @@
 ﻿using NUnit.Framework.Constraints;
 using UnityEngine;
+using UnityEngine.Audio;
 
 public class WeaponR301 : MonoBehaviour
 {
@@ -107,6 +108,10 @@ public class WeaponR301 : MonoBehaviour
         }
 
         if (recoil != null) recoil.ApplyRecoil(shootgunRecoilKickback, shootgunRecoilRotation);
+        shootAudioSource.pitch = Random.Range(2f, 2.15f);
+        shootAudioSource.PlayOneShot(shootClip);
+        shootAudioSource.pitch = 1f;
+
     }
 
 

@@ -11,6 +11,7 @@ public class SmoothPlayerController : MonoBehaviour
 
     [Header("Movimiento")]
     public float maxSpeed = 20f;
+    public float forwardSpeedMultiplier = 1.2f;
     public float groundAccel = 80f;
     public float airAccel = 30f;
     public float jumpForce = 12f;
@@ -54,7 +55,7 @@ public class SmoothPlayerController : MonoBehaviour
     [Header("Control de inercia")]
     [Range(0f, 2f)]
     public float directionCancelStrength = 1f;
-    public float bHopTimer = 0.1f;
+    public float bHopTimer = 0.075f;
     public bool hasJumped = false;
 
     [Header("Dash Momentum Priority")]
@@ -69,6 +70,21 @@ public class SmoothPlayerController : MonoBehaviour
     public float wallJumpSideForce = 10f;
     public float wallCoyoteTime = 0.1f;
     public LayerMask wallMask = ~0;
+    private bool wantsWallJump;
+
+
+    [Header("Wall Run")]
+    public float wallRunForce = 18f;
+    public float wallRunGravity = 5f;
+
+    private bool wallRunning;
+    private bool spaceHeldLastFrame;
+    public float wallRideLookThreshold = 0.75f;     // ← NUEVO (antes era rideLookThreshold = -0.05f)
+    public float wallJumpLookThreshold = -0.20f;    // ← antes era -0.3f (un poco más permisivo)
+    public float wallStickForceOpenAngle = 18f;     // ← fuerza extra cuando miras muy hacia fuera
+    public float wallStickAngleStart = 0.4f;        // a partir de qué dot empezamos a aplicar más stick
+
+
 
 
 
@@ -91,6 +107,10 @@ public class SmoothPlayerController : MonoBehaviour
     private float currentMaxSpeed;
     private bool dashDecayDone;
     private float slideTimer;
+    private float speedAtWallEntry;
+    private bool wasWallRunningLastFrame;
+    private float peakBhopSpeed; // Almacena la velocidad más alta de la cadena actual
+
 
     [HideInInspector] public bool justLanded = false;
 
@@ -149,8 +169,10 @@ public class SmoothPlayerController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Space) && grounded)
         {
             Vector3 v = rb.linearVelocity;
+            float currentHorizontalSpeed = new Vector3(v.x, 0f, v.z).magnitude;
             v.y = 0f;
             rb.linearVelocity = v;
+
             rb.AddForce(Vector3.up * jumpForce, ForceMode.VelocityChange);
             grounded = false;
             dashPendingJump = false;
@@ -159,25 +181,62 @@ public class SmoothPlayerController : MonoBehaviour
             if (bHopTimer > 0f)
             {
                 bHopCounter++;
-                float bhopBoost = maxSpeed * 0.075f;
-                float bhopDecayFactor = 0.8f;
-                currentMaxSpeed += bhopBoost;
-                bhopBoost *= bhopDecayFactor;
+                float bhopBoost = maxSpeed * 0.1f;
+
+                // Solo actualizamos si la velocidad actual + boost es mayor que nuestro tope penalizado
+                if (currentHorizontalSpeed + bhopBoost > currentMaxSpeed)
+                {
+                    currentMaxSpeed = currentHorizontalSpeed + bhopBoost;
+                    peakBhopSpeed = currentMaxSpeed;
+                }
+
+                // 2. Forzamos a que la velocidad actual intente recuperar ese pico
+                currentMaxSpeed = peakBhopSpeed;
+
+                // 3. Aplicamos un pequeño empujón extra en la dirección que mira el jugador 
+                // para compensar la pérdida de la fricción del aire del frame anterior
+                Vector3 wishDir = transform.TransformDirection(inputDir).normalized;
+                rb.AddForce(wishDir * bhopBoost, ForceMode.VelocityChange);
 
                 if (dynamicFOV) dynamicFOV.AddFOVKick(bhopFov);
+                dashDecayDone = false;
             }
             else
             {
-                dashDecayDone = false;
+                // Si fallamos el timing, reseteamos el récord de velocidad
                 bHopCounter = 0;
+                peakBhopSpeed = maxSpeed;
+                dashDecayDone = false;
             }
-            
         }
 
+        bool spaceHeld = Input.GetKey(KeyCode.Space);
+        // BUFFER de intención de wall jump
         if (Input.GetKeyDown(KeyCode.Space) && wallTimer > 0f && !grounded)
         {
-            WallJump();
+            wantsWallJump = true;
         }
+
+        if (touchingWall && !grounded && spaceHeld)
+        {
+            wallRunning = true;
+        }
+        else
+        {
+            // SOLTAR SPACE → wall jump inmediato (aunque no haya wallrun)
+            if ((wallRunning || wantsWallJump) && spaceHeldLastFrame && !spaceHeld && wallTimer > 0f)
+            {
+                WallJump();
+            }
+
+            wallRunning = false;
+        }
+
+
+        if (!spaceHeld)
+            wantsWallJump = false;
+
+        spaceHeldLastFrame = spaceHeld;
     }
 
     void FixedUpdate()
@@ -192,31 +251,27 @@ public class SmoothPlayerController : MonoBehaviour
         // Detectar aterrizaje → activar slide si vamos rápido
         if (!wasGrounded && groundedNow)
         {
-
-            justLanded = true; // ✅ Señal de aterrizaje
+            justLanded = true;
             Vector3 preLandingVel = rb.linearVelocity;
             Vector3 hVel = new Vector3(preLandingVel.x, 0f, preLandingVel.z);
             float hSpeed = hVel.magnitude;
 
-            bHopTimer = 0.1f;
-
-
-           
+            bHopTimer = 0.12f; // Un margen ligeramente mayor ayuda a la consistencia
 
             if (hSpeed > slideMinSpeedThreshold)
             {
                 slideTimer = postDashSlideTime;
-                float speedToKeep = Mathf.Max(hSpeed * 0.82f, slideMinSpeedThreshold * 1.15f);
+
+                // --- MODIFICACIÓN AQUÍ ---
+                // Si el jugador está presionando espacio (intentando bhop), preservamos más velocidad
+                float preservation = Input.GetKey(KeyCode.Space) ? 0.98f : 0.82f;
+
+                float speedToKeep = Mathf.Max(hSpeed * preservation, slideMinSpeedThreshold * 1.15f);
                 Vector3 targetSlideVel = hVel.normalized * speedToKeep;
                 rb.linearVelocity = new Vector3(targetSlideVel.x, Mathf.Max(preLandingVel.y, -1f), targetSlideVel.z);
 
-                if (inputDir.sqrMagnitude > 0.01f)
-                {
-                    Vector3 wish = transform.TransformDirection(inputDir).normalized;
-                    float dot = Vector3.Dot(hVel.normalized, wish);
-                    if (dot < 0.3f)
-                        rb.AddForce(wish * 6f, ForceMode.VelocityChange);
-                }
+                // Actualizamos el currentMaxSpeed para que el motor de movimiento no nos frene en el FixedUpdate
+                currentMaxSpeed = Mathf.Max(currentMaxSpeed, speedToKeep);
             }
         }
 
@@ -240,43 +295,58 @@ public class SmoothPlayerController : MonoBehaviour
 
         // Wall check
         touchingWall = false;
-
         Vector3 origin = transform.position + Vector3.up * 1f;
-        Vector3[] dirs =
-        {
-    transform.right,
-    -transform.right,
-    transform.forward,
-    -transform.forward
-};
+        Vector3[] dirs = { transform.right, -transform.right, transform.forward, -transform.forward };
+        Vector3 camForward = transform.forward; // o cameraTransform.forward si prefieres
 
-        Vector3 camForward = transform.forward;
-        float minWallLookDot = -0.3f; // cuanto más cercano a -1, más estricto
+        float bestDot = -1f;
+        RaycastHit bestHit = default;
+
+        // Simplificamos la detección para que sea más robusta de frente
+        float closestDist = float.MaxValue;
+        bool foundWall = false;
 
         foreach (var dir in dirs)
         {
-            if (Physics.Raycast(origin, dir, out RaycastHit hit, 1f, wallMask))
+            // Aumentamos un poco el rango del rayo (1.3f) para detectar la pared antes de chocar físicamente
+            if (Physics.Raycast(origin, dir, out RaycastHit hit, 1.3f, wallMask))
             {
                 if (!grounded)
                 {
-                    // Evitar spamear la misma pared
                     if (hasWallJumpedSinceGround && Vector3.Dot(hit.normal, lastWallNormal) > 0.98f)
                         continue;
 
-                    // 🔥 CHECK DE ÁNGULO CAMARA-PARED
-                    float lookDot = Vector3.Dot(camForward, hit.normal);
-
-                    if (lookDot > minWallLookDot)
-                        continue; // Está de lado o de espaldas → no walljump
-
-                    touchingWall = true;
-                    wallNormal = hit.normal;
-                    wallTimer = wallCoyoteTime;
-                    break;
+                    // En lugar de buscar el "mejor dot", buscamos la pared más cercana
+                    if (hit.distance < closestDist)
+                    {
+                        closestDist = hit.distance;
+                        bestHit = hit;
+                        foundWall = true;
+                    }
                 }
             }
         }
 
+        if (foundWall)
+        {
+            wallNormal = bestHit.normal;
+            float lookDot = Vector3.Dot(transform.forward, wallNormal);
+
+            // WALL RIDE: Se activa si no estamos mirando directamente AL INTERIOR de la pared (normal vs forward)
+            // De frente, lookDot es -1. De lado es 0. 
+            if (lookDot < 0.9f) // Casi cualquier ángulo sirve para tocar la pared
+            {
+                touchingWall = true;
+                if (dynamicFOV) dynamicFOV.SetWallTilt(wallNormal);
+                wallTimer = wallCoyoteTime; // Permitimos el salto siempre que estemos tocando
+            }
+        }
+        if (!touchingWall && dynamicFOV)
+        {
+            dynamicFOV.ResetTilt();
+        }
+
+        
         wallTimer -= Time.fixedDeltaTime;
 
         Vector3 velocity = rb.linearVelocity;
@@ -320,12 +390,79 @@ public class SmoothPlayerController : MonoBehaviour
                 rb.linearVelocity = new Vector3(horizontalVel.x, rb.linearVelocity.y, horizontalVel.z);
             }
         }
+        if (wallRunning)
+        {
+            // --- NUEVO: Capturar velocidad al entrar ---
+            if (!wasWallRunningLastFrame)
+            {
+                // Guardamos la magnitud actual, pero nos aseguramos de que sea al menos la velocidad base
+                speedAtWallEntry = Mathf.Max(rb.linearVelocity.magnitude, maxSpeed);
+                wasWallRunningLastFrame = true;
+            }
 
+            // [Tu lógica actual de movimiento proyectado en la pared...]
+            Vector3 playerInputWorld = transform.TransformDirection(inputDir);
+            Vector3 wallProjectedMove = Vector3.ProjectOnPlane(playerInputWorld, wallNormal).normalized;
+
+            if (inputDir.sqrMagnitude < 0.01f)
+            {
+                Vector3 wallForward = Vector3.Cross(wallNormal, Vector3.up);
+                if (Vector3.Dot(wallForward, rb.linearVelocity) < 0f) wallForward = -wallForward;
+                wallProjectedMove = wallForward;
+            }
+
+            // Aplicar fuerza de movimiento
+            rb.AddForce(wallProjectedMove * wallRunForce, ForceMode.Acceleration);
+
+            // --- NUEVO: Limitar velocidad ---
+            // Si la velocidad actual supera la que teníamos al entrar, la recortamos
+            if (rb.linearVelocity.magnitude > speedAtWallEntry)
+            {
+                rb.linearVelocity = rb.linearVelocity.normalized * speedAtWallEntry;
+            }
+
+            // [El resto de tus fuerzas: Succión, Gravedad reducida, etc.]
+            rb.AddForce(-wallNormal * 8f, ForceMode.Acceleration);
+
+            // 2. Succión extra al mirar hacia fuera
+            float lookDot = Vector3.Dot(transform.forward, wallNormal);
+            if (lookDot > wallStickAngleStart)
+            {
+                // Usamos un multiplicador para que la fuerza no sea infinita
+                float extraStick = Mathf.InverseLerp(wallStickAngleStart, 0.95f, lookDot);
+                // IMPORTANTE: Limitamos la fuerza total para evitar el rebote
+                rb.AddForce(-wallNormal * wallStickForceOpenAngle * extraStick, ForceMode.Acceleration);
+            }
+
+            // Gravedad reducida y control vertical
+            rb.AddForce(Vector3.down * wallRunGravity, ForceMode.Acceleration);
+
+            // Limitar caída vertical para que se sienta que "planeas"
+            Vector3 v = rb.linearVelocity;
+            if (v.y < -maxSpeed * 0.2f) v.y = -maxSpeed * 0.2f;
+            rb.linearVelocity = v;
+        }
+        else
+        {
+            wasWallRunningLastFrame = false;
+        }
         if (inputDir.sqrMagnitude > 0.01f)
         {
+            // Calculamos la velocidad máxima deseada para este frame
+            float speedCap = currentMaxSpeed;
+
+            // Si nos movemos hacia adelante (W), aumentamos el límite de velocidad
+            if (inputDir.z > 0.1f)
+            {
+                // Lerp opcional para que la transición sea suave si el input no es binario
+                speedCap *= Mathf.Lerp(1f, forwardSpeedMultiplier, inputDir.z);
+            }
+
             Vector3 targetVel = horizontalVel + wishDir * accel * Time.fixedDeltaTime;
-            if (targetVel.magnitude > currentMaxSpeed)
-                targetVel = targetVel.normalized * currentMaxSpeed;
+
+            // Usamos el speedCap dinámico en lugar de currentMaxSpeed fijo
+            if (targetVel.magnitude > speedCap)
+                targetVel = targetVel.normalized * speedCap;
 
             rb.AddForce(targetVel - horizontalVel, ForceMode.VelocityChange);
         }
@@ -340,26 +477,55 @@ public class SmoothPlayerController : MonoBehaviour
         }
 
         // Gravedad personalizada
+        // Gravedad personalizada
         if (!grounded)
         {
-            if (rb.linearVelocity.y < 0f)
-                rb.AddForce(Vector3.down * gravity * fallGravityMultiplier, ForceMode.Acceleration);
-            else if (rb.linearVelocity.y > 0f && !Input.GetKey(KeyCode.Space))
-                rb.AddForce(Vector3.down * gravity * lowJumpMultiplier, ForceMode.Acceleration);
+            if (wallRunning)
+            {
+                rb.AddForce(Vector3.down * wallRunGravity, ForceMode.Acceleration);
+            }
             else
-                rb.AddForce(Vector3.down * gravity, ForceMode.Acceleration);
+            {
+                if (rb.linearVelocity.y < 0f)
+                    rb.AddForce(Vector3.down * gravity * fallGravityMultiplier, ForceMode.Acceleration);
+                else if (rb.linearVelocity.y > 0f && !Input.GetKey(KeyCode.Space))
+                    rb.AddForce(Vector3.down * gravity * lowJumpMultiplier, ForceMode.Acceleration);
+                else
+                    rb.AddForce(Vector3.down * gravity, ForceMode.Acceleration);
+            }
         }
 
-        // Decay del boost de velocidad del dash
+
         if (currentMaxSpeed > maxSpeed && !dashDecayDone)
         {
-            currentMaxSpeed -= maxSpeedDecayRate * Time.fixedDeltaTime;
+            // Calculamos la velocidad horizontal actual
+            float currentHVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude;
+
+            // --- NUEVA LÓGICA DE PENALIZACIÓN ---
+            // Si la velocidad real cae más de 5 unidades por debajo del máximo que deberíamos llevar...
+            if (currentMaxSpeed - currentHVelocity > 5f)
+            {
+                // Reducimos el tope máximo en 2.5
+                currentMaxSpeed -= 2.5f;
+
+                // También actualizamos el récord de memoria para que el próximo salto no nos teletransporte a la velocidad vieja
+                peakBhopSpeed = currentMaxSpeed;
+            }
+
+            // Decay natural (el que ya teníamos para que la velocidad baje suavemente con el tiempo)
+            float decayMod = (grounded && !Input.GetKey(KeyCode.Space)) ? 1f : 0.05f;
+            currentMaxSpeed -= maxSpeedDecayRate * decayMod * Time.fixedDeltaTime;
+
+            // Si bajamos del límite base, reseteamos todo
             if (currentMaxSpeed <= maxSpeed)
             {
                 currentMaxSpeed = maxSpeed;
                 dashDecayDone = true;
+                peakBhopSpeed = maxSpeed;
             }
         }
+
+
     }
 
     void Dash()
@@ -374,7 +540,7 @@ public class SmoothPlayerController : MonoBehaviour
         if (xAbs > zAbs)
         {
             dirMultiplier = 1f + (xAbs - zAbs);
-            dirMultiplier = Mathf.Clamp(dirMultiplier, 1.5f, 2f);
+            dirMultiplier = Mathf.Clamp(dirMultiplier, 3f, 3.5f);
         }
 
         Vector3 camForward = cameraTransform.forward;
@@ -385,6 +551,7 @@ public class SmoothPlayerController : MonoBehaviour
         Vector3 dashDir = horizontalDir;
         dashDir.y = vertical;
         dashDir.Normalize();
+        if (vertical < -0.8f) dashDir.y *= 1.3f;
 
         rb.AddForce(dashDir * dashStrength * dirMultiplier, ForceMode.VelocityChange);
         currentMaxSpeed = maxSpeed + dashMaxSpeedBoost;
@@ -392,8 +559,9 @@ public class SmoothPlayerController : MonoBehaviour
         dashLockTimer = dashMomentumLockTime;
         dashLockedDirection = dashDir;
 
-        if (vertical < -0.8f) dashDir.y *= 1.3f;
+       
     }
+
 
     void WallJump()
     {
@@ -421,7 +589,12 @@ public class SmoothPlayerController : MonoBehaviour
 
         lastWallNormal = wallNormal;
         hasWallJumpedSinceGround = true;
-     
+        if (dynamicFOV)
+        {
+            dynamicFOV.AddFOVKick(wallJumpFov);
+            dynamicFOV.TriggerWallJumpShake(); // ACTIVA EL SHAKE
+        }
+
     }
 
     void DashJump()
