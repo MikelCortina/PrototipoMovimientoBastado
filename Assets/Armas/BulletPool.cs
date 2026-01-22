@@ -22,10 +22,14 @@ public class BulletPool : MonoBehaviour
 
     public GameObject GetBullet()
     {
-        foreach (var bullet in _pool)
+        for (int i = 0; i < _pool.Count; i++)
         {
-            if (!bullet.activeInHierarchy) return bullet;
+            if (!_pool[i].activeInHierarchy)
+                return _pool[i];
         }
-        return null; // O expandir el pool
+
+        Debug.LogError("POOL DE BALAS AGOTADO");
+        return null;
     }
+
 }

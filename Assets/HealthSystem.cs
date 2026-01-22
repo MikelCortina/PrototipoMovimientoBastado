@@ -1,30 +1,26 @@
+using Unity.Netcode;
 using UnityEngine;
-using System;
+using System.Collections;
 
-public class HealthSystem : MonoBehaviour
+public class HealthSystem : NetworkBehaviour
 {
     [Header("Stats")]
+    public NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
     public float maxHealth = 100f;
-    public float currentHealth;
 
-    // Evento para que otros sistemas (UI, Sonido) escuchen cuando recibimos daño
-    // Pasa: (cantidad de daño, punto de impacto, si es crítico)
-    public event Action<float, Vector3, bool> OnDamageReceived;
+    [Header("Respawn Settings")]
+    [SerializeField] private GameObject playerPrefab; // Arrastra aquí el prefab del jugador
 
-    void Awake()
+    public void ReduceHealth(float amount, Vector3 hitPoint, bool isHeadshot)
     {
-        currentHealth = maxHealth;
-    }
+        if (!IsServer) return;
 
-    public void ReduceHealth(float amount, Vector3 hitPoint)
-    {
-        currentHealth -= amount;
-        currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
+        currentHealth.Value -= amount;
+        currentHealth.Value = Mathf.Clamp(currentHealth.Value, 0, maxHealth);
 
-        // Disparamos el evento para que la UI lo detecte
-        OnDamageReceived?.Invoke(amount, hitPoint, false);
+        NotifyDamageClientRpc(amount, hitPoint, isHeadshot);
 
-        if (currentHealth <= 0)
+        if (currentHealth.Value <= 0)
         {
             Die();
         }
@@ -32,7 +28,21 @@ public class HealthSystem : MonoBehaviour
 
     private void Die()
     {
-        Debug.Log(gameObject.name + " ha sido eliminado.");
-        // Aquí iría la lógica de muerte (animación, loot box, etc.)
+        if (!IsServer) return;
+
+        ulong clientId = OwnerClientId;
+        Debug.Log($"Jugador {clientId} ha muerto. Solicitando respawn...");
+
+        // 1. Llamamos al manager pasando nuestra ID
+        if (SpawnManager.Instance != null)
+        {
+            SpawnManager.Instance.RequestRespawn(clientId);
+        }
+
+        // 2. Nos destruimos (Despawn elimina el objeto en todos los clientes)
+        GetComponent<NetworkObject>().Despawn(true);
     }
+
+    [ClientRpc]
+    private void NotifyDamageClientRpc(float damage, Vector3 pos, bool isHeadshot) { /* Tu código UI */ }
 }

@@ -1,8 +1,9 @@
 ﻿using UnityEngine;
 using static UnityEngine.Rendering.DebugUI.MessageBox;
+using Unity.Netcode;
 
 [RequireComponent(typeof(Rigidbody))]
-public class SmoothPlayerController : MonoBehaviour
+public class SmoothPlayerController : NetworkBehaviour
 {
     [Header("FOV Effects")]
     public DynamicSpeedFOV dynamicFOV;
@@ -133,6 +134,7 @@ public class SmoothPlayerController : MonoBehaviour
 
     void Update()
     {
+        if (!IsOwner) return;
         // Input
         inputDir = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical")).normalized;
 
@@ -299,7 +301,7 @@ public class SmoothPlayerController : MonoBehaviour
         Vector3[] dirs = { transform.right, -transform.right, transform.forward, -transform.forward };
         Vector3 camForward = transform.forward; // o cameraTransform.forward si prefieres
 
-        float bestDot = -1f;
+       
         RaycastHit bestHit = default;
 
         // Simplificamos la detección para que sea más robusta de frente

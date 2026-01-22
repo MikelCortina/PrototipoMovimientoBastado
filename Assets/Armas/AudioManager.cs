@@ -4,18 +4,52 @@ public class AudioManager : MonoBehaviour
 {
     public static AudioManager Instance;
 
-    [Header("Impact Sounds")]
-    public AudioClip bodyHitSound;
-    public AudioClip headshotHitSound;
-    public AudioClip shieldBreakSound; // Extra para el futuro
+    [Header("Audio Sources")]
+    public AudioSource localFeedbackSource; // 2D (Spatial Blend = 0)
+    public AudioSource worldImpactSource;  // 3D (Spatial Blend = 1)
 
-    void Awake() { Instance = this; }
+    [Header("Hit Sounds (Local 2D)")]
+    public AudioClip bodyHitLocal;
+    public AudioClip headshotHitLocal;
 
-    public void PlayHitSound(Vector3 position, bool isHeadshot)
+    [Header("World Impacts (World 3D)")]
+    public AudioClip fleshImpactWorld;
+
+    private int lastFramePlayed = -1;
+    private bool headshotPlayedThisFrame = false;
+
+    void Awake()
     {
-        AudioClip clipToPlay = isHeadshot ? headshotHitSound : bodyHitSound;
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
 
-        // Reproducir el sonido
-        AudioSource.PlayClipAtPoint(clipToPlay, position, 1.0f);
+    // ESTA ES LA FUNCIÓN QUE BUSCA TU DAMAGEHANDLER
+    public void PlayHitFeedback(Vector3 position, bool isHeadshot)
+    {
+        // Evitar saturación de sonido en el mismo frame (Priority System)
+        if (Time.frameCount != lastFramePlayed)
+        {
+            lastFramePlayed = Time.frameCount;
+            headshotPlayedThisFrame = false;
+        }
+
+        if (headshotPlayedThisFrame) return;
+
+        // 1. Sonido LOCAL (El "Satisfyer" de Apex)
+        AudioClip clip2D = isHeadshot ? headshotHitLocal : bodyHitLocal;
+        if (localFeedbackSource != null && clip2D != null)
+        {
+            localFeedbackSource.PlayOneShot(clip2D);
+        }
+
+        // 2. Sonido MUNDO (Impacto físico)
+        if (worldImpactSource != null && fleshImpactWorld != null)
+        {
+            worldImpactSource.transform.position = position;
+            worldImpactSource.PlayOneShot(fleshImpactWorld);
+        }
+
+        if (isHeadshot) headshotPlayedThisFrame = true;
     }
 }

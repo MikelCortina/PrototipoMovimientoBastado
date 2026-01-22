@@ -1,16 +1,16 @@
-﻿using NUnit.Framework.Constraints;
-using UnityEngine;
+﻿using UnityEngine;
+using Unity.Netcode;
 using UnityEngine.Audio;
 
-public class WeaponR301 : MonoBehaviour
+public class WeaponR301 : NetworkBehaviour
 {
     [Header("Ajustes de Disparo Normal")]
     public float fireRate = 0.1f;
     public float bulletSpeed = 150f;
     public float bulletGravity = 9.81f;
     public float damage = 14f;
-    public Vector3 recoilKickback = new Vector3(0f, 0f, -0.1f); // desplazamiento hacia atrás
-    public Vector3 recoilRotation = new Vector3(-2f, 0f, 0f);   // rotación hacia arriba
+    public Vector3 recoilKickback = new Vector3(0f, 0f, -0.1f);
+    public Vector3 recoilRotation = new Vector3(-2f, 0f, 0f);
     public AudioSource shootAudioSource;
     public AudioClip shootClip;
 
@@ -25,9 +25,8 @@ public class WeaponR301 : MonoBehaviour
     public float shotgunFireRate = 0.6f;
     public float shotgunDamageMultiplier = 0.6f;
     public float shotgunBulletSpeed = 90f;
-    public Vector3 shootgunRecoilKickback = new Vector3(0f, 0f, -0.2f); // desplazamiento hacia atrás
-    public Vector3 shootgunRecoilRotation = new Vector3(-3f, 0f, 0f);   // rotación hacia arriba
-
+    public Vector3 shootgunRecoilKickback = new Vector3(0f, 0f, -0.2f);
+    public Vector3 shootgunRecoilRotation = new Vector3(-3f, 0f, 0f);
 
     [Header("Referencias")]
     public Camera mainCamera;
@@ -38,125 +37,151 @@ public class WeaponR301 : MonoBehaviour
     private float _nextFireTime;
     private float _nextShotgunTime;
     private float _currentBloomDegrees = 0f;
+    private int _fireSequenceCounter = 0;
 
     void Update()
     {
-        // DISPARO NORMAL
-        if (Input.GetButton("Fire1"))
+        // Solo el dueño del objeto puede procesar el Input
+        if (!IsOwner) return;
+
+        // Recuperación de Bloom
+        if (!Input.GetButton("Fire1"))
         {
-            if (Time.time >= _nextFireTime)
-            {
-                _nextFireTime = Time.time + fireRate;
-                FireSingle();
-            }
+            _currentBloomDegrees = Mathf.MoveTowards(_currentBloomDegrees, 0f, recoverRate * Time.deltaTime);
         }
-        else
+
+        // DISPARO NORMAL
+        if (Input.GetButton("Fire1") && Time.time >= _nextFireTime)
         {
-            _currentBloomDegrees = Mathf.MoveTowards(
-                _currentBloomDegrees,
-                0f,
-                recoverRate * Time.deltaTime
-            );
+            _nextFireTime = Time.time + fireRate;
+            HandleFire(false);
         }
 
         // DISPARO ESCOPETA
-        if (Input.GetButtonDown("Fire2"))
+        if (Input.GetButtonDown("Fire2") && Time.time >= _nextShotgunTime)
         {
-            if (Time.time >= _nextShotgunTime)
-            {
-                _nextShotgunTime = Time.time + shotgunFireRate;
-                FireShotgun();
-            }
+            _nextShotgunTime = Time.time + shotgunFireRate;
+            HandleFire(true);
         }
     }
 
-    void FireSingle()
+    private void HandleFire(bool isShotgun)
     {
         Vector3 targetPoint = GetCameraTargetPoint();
-        Vector3 baseDirection = (targetPoint - muzzlePoint.position).normalized;
 
-        Vector2 randomCircle = Random.insideUnitCircle * _currentBloomDegrees;
-        Quaternion spreadRotation = Quaternion.Euler(randomCircle.x, randomCircle.y, 0);
-        Vector3 finalDirection =
-            Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
+        // 1. Obtenemos el tiempo de red PRIMERO para que sea consistente en todas las llamadas
+        float strikeTime = NetworkManager.Singleton.ServerTime.TimeAsFloat;
 
-        _currentBloomDegrees = Mathf.Clamp(
-            _currentBloomDegrees + bloomPerShot,
-            0f,
-            maxSpreadDegrees
-        );
+        // 2. Generamos la semilla
+        int shotSeed = Random.Range(1, int.MaxValue) + _fireSequenceCounter;
+        _fireSequenceCounter++;
 
-        SpawnBullet(finalDirection, damage);
-        shootAudioSource.PlayOneShot(shootClip);
+        // 3. CORRECCIÓN ERROR CS7036: Ahora pasamos strikeTime (el 5º argumento)
+        ExecuteVisualFire(targetPoint, isShotgun, true, shotSeed, strikeTime);
 
-        if (recoil != null) recoil.ApplyRecoil(recoilKickback, recoilRotation);
+        // 4. Enviamos todo al servidor
+        FireServerRpc(targetPoint, isShotgun, shotSeed, strikeTime);
     }
 
-    void FireShotgun()
+    [ServerRpc]
+    void FireServerRpc(Vector3 targetPoint, bool isShotgun, int shotSeed, float strikeTime)
     {
-        Vector3 targetPoint = GetCameraTargetPoint();
-        Vector3 baseDirection = (targetPoint - muzzlePoint.position).normalized;
+        // CORRECCIÓN ERROR CS7036: Añadido strikeTime a la llamada del ClientRpc
+        FireClientRpc(targetPoint, isShotgun, shotSeed, strikeTime);
 
+        // Validación de lag (Seguridad)
+        float currentTime = NetworkManager.Singleton.ServerTime.TimeAsFloat;
+        float rtt = currentTime - strikeTime;
+        float maxLag = 0.25f;
+        float validatedStrikeTime = (rtt < 0 || rtt > maxLag) ? currentTime - Mathf.Clamp(rtt, 0, maxLag) : strikeTime;
+
+        LagCompensator.RewindAll(validatedStrikeTime);
+
+        Random.InitState(shotSeed);
+        if (isShotgun) SpawnShotgunProjectiles(targetPoint, true, validatedStrikeTime);
+        else SpawnSingleProjectile(targetPoint, true, validatedStrikeTime);
+
+        LagCompensator.RestoreAll();
+    }
+
+    [ClientRpc(Delivery = RpcDelivery.Reliable)]
+    void FireClientRpc(Vector3 targetPoint, bool isShotgun, int shotSeed, float strikeTime)
+    {
+        if (IsOwner) return;
+        // CORRECCIÓN ERROR CS1501: Ahora pasamos los 5 argumentos requeridos
+        ExecuteVisualFire(targetPoint, isShotgun, false, shotSeed, strikeTime);
+    }
+
+    // Asegúrate de que la firma de esta función sea EXACTAMENTE así:
+    void ExecuteVisualFire(Vector3 targetPoint, bool isShotgun, bool applyRecoil, int shotSeed, float strikeTime)
+    {
+        Random.InitState(shotSeed);
+
+        if (isShotgun)
+        {
+            // CORRECCIÓN ERROR CS0103: Pasamos strikeTime que ahora sí existe en el contexto
+            SpawnShotgunProjectiles(targetPoint, false, strikeTime);
+            shootAudioSource.pitch = Random.Range(2f, 2.15f);
+            if (applyRecoil && recoil != null) recoil.ApplyRecoil(shootgunRecoilKickback, shootgunRecoilRotation);
+        }
+        else
+        {
+            // CORRECCIÓN ERROR CS0103: Pasamos strikeTime que ahora sí existe en el contexto
+            SpawnSingleProjectile(targetPoint, false, strikeTime);
+            if (applyRecoil && recoil != null) recoil.ApplyRecoil(recoilKickback, recoilRotation);
+        }
+
+        shootAudioSource.PlayOneShot(shootClip);
+        shootAudioSource.pitch = 1f;
+    }
+    // --- LÓGICA DE SPAWN ADAPTADA ---
+
+    void SpawnSingleProjectile(Vector3 targetPoint, bool isServer, float startTime)
+    {
+        Vector3 baseDirection = (targetPoint - muzzlePoint.position).normalized;
+        Vector2 randomCircle = Random.insideUnitCircle * _currentBloomDegrees;
+        Quaternion spreadRotation = Quaternion.Euler(randomCircle.x, randomCircle.y, 0);
+        Vector3 finalDirection = Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
+
+        if (!isServer) _currentBloomDegrees = Mathf.Clamp(_currentBloomDegrees + bloomPerShot, 0f, maxSpreadDegrees);
+
+        CreateProjectile(finalDirection, bulletSpeed, damage, isServer, startTime);
+    }
+
+    void SpawnShotgunProjectiles(Vector3 targetPoint, bool isServer, float startTime)
+    {
+        Vector3 baseDirection = (targetPoint - muzzlePoint.position).normalized;
         for (int i = 0; i < pellets; i++)
         {
             Vector2 randomCircle = Random.insideUnitCircle * shotgunSpreadDegrees;
             Quaternion spreadRotation = Quaternion.Euler(randomCircle.x, randomCircle.y, 0);
-            Vector3 pelletDirection =
-                Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
+            Vector3 pelletDirection = Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
 
-            SpawnShotgunPellet(pelletDirection);
+            CreateProjectile(pelletDirection, shotgunBulletSpeed, damage * shotgunDamageMultiplier, isServer, startTime);
         }
-
-        if (recoil != null) recoil.ApplyRecoil(shootgunRecoilKickback, shootgunRecoilRotation);
-        shootAudioSource.pitch = Random.Range(2f, 2.15f);
-        shootAudioSource.PlayOneShot(shootClip);
-        shootAudioSource.pitch = 1f;
-
     }
 
-
-    void SpawnBullet(Vector3 direction, float dmg)
+    void CreateProjectile(Vector3 direction, float speed, float dmg, bool isServer, float startTime = 0)
     {
-        GameObject bulletGO = Instantiate(
-            bulletPrefab,
-            muzzlePoint.position,
-            Quaternion.LookRotation(direction)
-        );
-
-        Projectile proj = bulletGO.GetComponent<Projectile>();
-        if (proj != null)
+        GameObject bulletGO = BulletPool.Instance.GetBullet();
+        if (bulletGO != null)
         {
-            proj.Initialize(direction, bulletSpeed, bulletGravity, dmg, muzzlePoint); 
+            bulletGO.transform.position = muzzlePoint.position;
+            bulletGO.transform.rotation = Quaternion.LookRotation(direction);
+            bulletGO.SetActive(true);
+
+            Projectile proj = bulletGO.GetComponent<Projectile>();
+            if (proj != null)
+            {
+                // PASAMOS EL startTime AQUÍ
+                proj.Initialize(direction, speed, bulletGravity, dmg, OwnerClientId, isServer, startTime);
+            }
         }
     }
-
-    void SpawnShotgunPellet(Vector3 direction)
-    {
-        GameObject bulletGO = Instantiate(
-            bulletPrefab,
-            muzzlePoint.position,
-            Quaternion.LookRotation(direction)
-        );
-
-        Projectile proj = bulletGO.GetComponent<Projectile>();
-        if (proj != null)
-        {
-            proj.Initialize(
-                direction,
-                shotgunBulletSpeed,                 // 👈 velocidad propia
-                bulletGravity,
-                damage * shotgunDamageMultiplier,
-                muzzlePoint
-            );
-        }
-    }
-
 
     Vector3 GetCameraTargetPoint()
     {
         Ray ray = mainCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-        return Physics.Raycast(ray, out RaycastHit hit, 1000f)
-            ? hit.point
-            : ray.GetPoint(1000f);
+        return Physics.Raycast(ray, out RaycastHit hit, 1000f) ? hit.point : ray.GetPoint(1000f);
     }
 }

@@ -1,29 +1,33 @@
 using UnityEngine;
+using Unity.Netcode;
 
 public class DamageHandler : MonoBehaviour, IDamageable
 {
-    [Header("Settings")]
     [SerializeField] private float damageMultiplier = 1.0f;
-    [SerializeField] private bool isHeadshotHitbox = false; // <-- Nueva variable
-
+    [SerializeField] private bool isHeadshotHitbox = false;
     [SerializeField] private HealthSystem healthSystem;
 
     public void TakeDamage(DamageData data)
     {
-        if (healthSystem == null) return;
+        // Solo procesamos daño en el servidor
+        if (!NetworkManager.Singleton.IsServer) return;
 
-        float finalDamage = data.amount * damageMultiplier;
+        if (healthSystem != null)
+        {
+            float finalDamage = data.amount * damageMultiplier;
+            healthSystem.ReduceHealth(finalDamage, data.hitPoint, isHeadshotHitbox);
 
-        // Enviamos el daño al sistema central
-        healthSystem.ReduceHealth(finalDamage, data.hitPoint);
+            // Sonido global para todos los jugadores cerca
+            PlayImpactSoundClientRpc(data.hitPoint, isHeadshotHitbox);
+        }
+    }
 
-        // Feedback de sonido diferenciado
+    [ClientRpc]
+    private void PlayImpactSoundClientRpc(Vector3 pos, bool isHead)
+    {
         if (AudioManager.Instance != null)
         {
-            AudioManager.Instance.PlayHitSound(data.hitPoint, isHeadshotHitbox);
+            AudioManager.Instance.PlayHitFeedback(pos, isHead);
         }
-
-        // Opcional: Log para depurar
-        Debug.Log($"Impacto en {(isHeadshotHitbox ? "CABEZA" : "CUERPO")}. Daño: {finalDamage}");
     }
 }

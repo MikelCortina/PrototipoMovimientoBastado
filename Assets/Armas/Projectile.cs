@@ -1,6 +1,6 @@
+ï»¿using Unity.Netcode;
 using UnityEngine;
 
-[RequireComponent(typeof(LineRenderer))]
 public class Projectile : MonoBehaviour
 {
     private LineRenderer lr;
@@ -8,131 +8,144 @@ public class Projectile : MonoBehaviour
     private float gravity;
     private float damage;
     private Vector3 _lastPosition;
-    public GameObject impactEffectPrefab;
+    private ulong _ownerId;
+    private bool _isServerSide;
 
-    // Referencia al cañón para que la estela lo siga
-    private Transform _muzzleAnchor;
-    private bool _isAttached = true;
-    private float _distanceTraveled = 0f;
+    [Header("Lifetime")]
+    [SerializeField] private float maxLifetime = 3f;
+    private float _lifeTimer;
 
-    [Header("Ajustes de Estela")]
-    public float detachDistance = 3.0f; // Distancia a la que la bala se "suelta" del arma
-
-    public void Initialize(Vector3 direction, float speed, float gravity, float dmg, Transform muzzle)
+    private void Awake()
     {
         lr = GetComponent<LineRenderer>();
-        _muzzleAnchor = muzzle;
+    }
 
-        // Configuración visual garantizada
-        lr.positionCount = 2;
-        lr.useWorldSpace = true;
-        lr.startWidth = 0.03f;
-        lr.endWidth = 0.03f;
+    public void Initialize(Vector3 direction, float speed, float grav, float dmg, ulong ownerId, bool isServer, float startTime = 0)
+    {
+        gravity = grav;
+        damage = dmg;
+        velocity = direction * speed;
+        _ownerId = ownerId;
+        _isServerSide = isServer;
 
-        if (lr.material == null || lr.material.name.Contains("Default"))
+        transform.forward = direction;
+        _lastPosition = transform.position;
+        _lifeTimer = 0f;
+
+        // --- PREDICCIÃ“N VISUAL (EXTRAPOLACIÃ“N) ---
+        if (!isServer && startTime > 0)
         {
-            lr.material = new Material(Shader.Find("Unlit/Color"));
-            lr.material.color = Color.yellow;
+            float timePassed = NetworkManager.Singleton.ServerTime.TimeAsFloat - startTime;
+            // Limitamos la predicciÃ³n para evitar saltos visuales absurdos (max 250ms)
+            timePassed = Mathf.Clamp(timePassed, 0, 0.25f);
+
+            if (timePassed > 0)
+            {
+                // Calculamos dÃ³nde deberÃ­a estar la bala despuÃ©s de 'timePassed' segundos
+                // PosiciÃ³n = P0 + V*t + 0.5 * g * t^2
+                Vector3 displacement = (velocity * timePassed) + (0.5f * Vector3.down * gravity * timePassed * timePassed);
+                transform.position += displacement;
+
+                // Actualizamos la velocidad con la gravedad aplicada en ese tiempo
+                velocity += Vector3.down * gravity * timePassed;
+                _lastPosition = transform.position;
+            }
+        }
+        // --- MANEJO VISUAL SEGURO ---
+
+        // 1. Control del LineRenderer (el rastro)
+        if (lr != null)
+        {
+            lr.enabled = !isServer; // Se apaga si es bala de servidor
+            if (lr.enabled)
+            {
+                lr.positionCount = 2;
+                lr.SetPosition(0, transform.position);
+                lr.SetPosition(1, transform.position);
+            }
         }
 
-        this.gravity = gravity;
-        this.damage = dmg;
-        this.velocity = direction * speed;
-
-        // Posición inicial
-        transform.position = muzzle.position;
-        _lastPosition = transform.position;
-
-        // Inicializar posiciones de la línea
-        lr.SetPosition(0, transform.position);
-        lr.SetPosition(1, transform.position);
+        // 2. Control del MeshRenderer (el modelo 3D, si lo tuviera)
+        // Usamos TryGetComponent para evitar el error si no existe
+        if (TryGetComponent<MeshRenderer>(out MeshRenderer mesh))
+        {
+            mesh.enabled = !isServer; // Se apaga si es bala de servidor
+        }
     }
 
     void Update()
     {
-        // 1. Calcular física y movimiento
+        _lifeTimer += Time.deltaTime;
+        if (_lifeTimer >= maxLifetime) { Disable(); return; }
+
         velocity += Vector3.down * gravity * Time.deltaTime;
-        Vector3 step = velocity * Time.deltaTime;
-        Vector3 nextPosition = transform.position + step;
-
-        _distanceTraveled += step.magnitude;
-
-        // 2. Raycast Predictivo (Para no atravesar paredes)
+        Vector3 nextPosition = transform.position + velocity * Time.deltaTime;
         Vector3 direction = nextPosition - _lastPosition;
-        float distance = direction.magnitude;
 
-        if (Physics.Raycast(_lastPosition, direction, out RaycastHit hit, distance))
+        // Raycast para colisiones (esto sigue ocurriendo en servidor y cliente)
+        if (Physics.Raycast(_lastPosition, direction.normalized, out RaycastHit hit, direction.magnitude))
         {
             OnHit(hit);
-            return; // Detener actualización si impacta
+            return;
         }
 
-        // 3. Actualizar posiciones lógicas
-        _lastPosition = transform.position;
         transform.position = nextPosition;
 
-        // 4. Actualizar Estela (El truco de Apex)
-        UpdateTracerVisuals();
+        // --- CORRECCIÃ“N DEL ERROR DE INDEX ---
+        // Solo actualizamos el rastro si es una bala visual (no de servidor)
+        if (!_isServerSide && lr != null && lr.enabled)
+        {
+            // Nos aseguramos de que siempre haya 2 puntos antes de asignar
+            if (lr.positionCount < 2) lr.positionCount = 2;
 
-        // Autodestrucción por seguridad (fuera de límites)
-        if (transform.position.y < -100f || _distanceTraveled > 2000f)
-            Destroy(gameObject);
+            lr.SetPosition(0, _lastPosition);
+            lr.SetPosition(1, transform.position);
+        }
+
+        _lastPosition = transform.position;
+
+        if (transform.position.y < -5000f) Disable();
     }
 
-    void UpdateTracerVisuals()
+    private void OnHit(RaycastHit hit)
     {
-        // La punta de la bala (Posición 1) siempre es donde está el objeto Projectile
-        lr.SetPosition(1, transform.position);
-
-        // El origen de la bala (Posición 0)
-        if (_isAttached && _distanceTraveled < detachDistance && _muzzleAnchor != null)
+        if (_isServerSide)
         {
-            // Mientras esté cerca, el origen sigue al cañón del arma aunque muevas la cámara
-            lr.SetPosition(0, _muzzleAnchor.position);
-        }
-        else
-        {
-            // Una vez lejos, el origen se suelta y empieza a perseguir a la punta
-            _isAttached = false;
-            Vector3 currentStart = lr.GetPosition(0);
-            lr.SetPosition(0, Vector3.Lerp(currentStart, transform.position, Time.deltaTime * 15f));
-
-            // Si el inicio casi alcanza a la punta, destruimos el objeto
-            if (Vector3.Distance(currentStart, transform.position) < 0.1f)
+            // Evitar que el proyectil choque con quien lo disparÃ³
+            NetworkObject netObj = hit.collider.GetComponentInParent<NetworkObject>();
+            if (netObj != null && netObj.OwnerClientId == _ownerId) return;
+            IDamageable target = hit.collider.GetComponent<IDamageable>();
+            if (target != null)
             {
-                Destroy(gameObject);
+                target.TakeDamage(new DamageData
+                {
+                    amount = damage,
+                    hitPoint = hit.point,
+                    instigatorId = _ownerId,
+                    type = DamageType.Bullet
+                });
             }
         }
+
+        Disable();
     }
 
-    void OnHit(RaycastHit hit)
+    private void Disable()
     {
-        // Aseguramos que la línea llegue hasta el punto de impacto
-        lr.SetPosition(1, hit.point);
-
-        // Lógica de daño aquí (ej. hit.collider.GetComponent<Health>().TakeDamage(damage);)
-        Debug.Log("Impactó en: " + hit.collider.name);
-
-        // Aquí conectamos con el sistema de IDamageable anterior
-        IDamageable target = hit.collider.GetComponent<IDamageable>();
-
-        if (target != null)
-        {
-            DamageData data = new DamageData
-            {
-                amount = 15f,
-                hitPoint = hit.point,
-                hitNormal = hit.normal,
-                type = DamageType.Bullet
-            };
-            target.TakeDamage(data);
-        }
-
-        // Feedback visual de impacto (Impact Decals)
-       // Instantiate(impactEffectPrefab, hit.point, Quaternion.LookRotation(hit.normal));
-
-        Destroy(gameObject);
+        gameObject.SetActive(false); // ðŸ‘ˆ vuelve al pool
     }
 
- 
+    private void OnDisable()
+    {
+        // Limpieza TOTAL para pooling
+        velocity = Vector3.zero;
+        gravity = 0f;
+        damage = 0f;
+        _lifeTimer = 0f;
+
+        if (lr != null)
+        {
+            lr.positionCount = 0;
+        }
+    }
 }
