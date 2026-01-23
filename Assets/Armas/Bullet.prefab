@@ -11,7 +11,8 @@ GameObject:
   - component: {fileID: 3667072198699650427}
   - component: {fileID: 746898319345405923}
   - component: {fileID: 5164662987517671083}
-  m_Layer: 0
+  - component: {fileID: 8060711267949057232}
+  m_Layer: 7
   m_Name: Bullet
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -47,7 +48,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1a9f4a46c7192d04f9ce995bb3a5e572, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  impactEffectPrefab: {fileID: 0}
+  isLocal: 0
   detachDistance: 3
 --- !u!120 &5164662987517671083
 LineRenderer:
@@ -105,7 +106,7 @@ LineRenderer:
       m_Curve:
       - serializedVersion: 3
         time: 0
-        value: 1
+        value: 0.0128211975
         inSlope: 0
         outSlope: 0
         tangentMode: 0
@@ -156,6 +157,28 @@ LineRenderer:
   m_UseWorldSpace: 1
   m_Loop: 0
   m_ApplyActiveColorSpace: 1
+--- !u!114 &8060711267949057232
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6532905790939954973}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa584fbee541324448dd18d8409c7a41, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ObservedComponentsFoldoutOpen: 1
+  Group: 0
+  prefixField: -1
+  Synchronization: 3
+  OwnershipTransfer: 0
+  observableSearch: 2
+  ObservedComponents: []
+  sceneViewId: 0
+  InstantiationId: 0
+  isRuntimeInstantiated: 0
 --- !u!1 &7642549679681002910
 GameObject:
   m_ObjectHideFlags: 0
@@ -168,7 +191,7 @@ GameObject:
   - component: {fileID: 4881973428268871868}
   - component: {fileID: 1533530687371798009}
   - component: {fileID: 4752101249998179130}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Cube (7)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -276,7 +299,7 @@ GameObject:
   - component: {fileID: 3118457540063756301}
   - component: {fileID: 7584118332751177431}
   - component: {fileID: 7680826022898077733}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Cube (8)
   m_TagString: Untagged
   m_Icon: {fileID: 0}

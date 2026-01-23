@@ -1,6 +1,6 @@
 using UnityEngine;
+using Photon.Pun;
 
-[RequireComponent(typeof(LineRenderer))]
 public class Projectile : MonoBehaviour
 {
     private LineRenderer lr;
@@ -8,131 +8,143 @@ public class Projectile : MonoBehaviour
     private float gravity;
     private float damage;
     private Vector3 _lastPosition;
-    public GameObject impactEffectPrefab;
 
-    // Referencia al cañón para que la estela lo siga
+    [HideInInspector] public bool isLocal;
     private Transform _muzzleAnchor;
     private bool _isAttached = true;
     private float _distanceTraveled = 0f;
+    public float detachDistance = 3.0f;
 
-    [Header("Ajustes de Estela")]
-    public float detachDistance = 3.0f; // Distancia a la que la bala se "suelta" del arma
+    // Configuración de fidelidad visual
+    private Vector3 _visualTailPos; // Posición de la cola para el efecto de retraso
 
-    public void Initialize(Vector3 direction, float speed, float gravity, float dmg, Transform muzzle)
+    // Configuración de Sub-stepping
+    private const float SUB_STEP_TIME = 0.01f;
+
+    public void Initialize(Vector3 direction, float speed, float gravity, float dmg, Transform muzzle, float lag)
     {
         lr = GetComponent<LineRenderer>();
         _muzzleAnchor = muzzle;
-
-        // Configuración visual garantizada
-        lr.positionCount = 2;
-        lr.useWorldSpace = true;
-        lr.startWidth = 0.03f;
-        lr.endWidth = 0.03f;
-
-        if (lr.material == null || lr.material.name.Contains("Default"))
-        {
-            lr.material = new Material(Shader.Find("Unlit/Color"));
-            lr.material.color = Color.yellow;
-        }
-
         this.gravity = gravity;
         this.damage = dmg;
         this.velocity = direction * speed;
 
-        // Posición inicial
         transform.position = muzzle.position;
-        _lastPosition = transform.position;
 
-        // Inicializar posiciones de la línea
+        if (lag > 0)
+        {
+            float simTime = 0f;
+            float timeStep = 0.02f;
+            while (simTime < lag)
+            {
+                float dt = Mathf.Min(timeStep, lag - simTime);
+                velocity += Vector3.down * gravity * dt;
+                transform.position += velocity * dt;
+                simTime += dt;
+            }
+        }
+
+        _lastPosition = transform.position;
+        _visualTailPos = transform.position; // Inicializar cola en el origen
+
+        lr.positionCount = 2;
         lr.SetPosition(0, transform.position);
         lr.SetPosition(1, transform.position);
     }
 
     void Update()
     {
-        // 1. Calcular física y movimiento
-        velocity += Vector3.down * gravity * Time.deltaTime;
-        Vector3 step = velocity * Time.deltaTime;
-        Vector3 nextPosition = transform.position + step;
+        float timeLeft = Time.deltaTime;
 
-        _distanceTraveled += step.magnitude;
-
-        // 2. Raycast Predictivo (Para no atravesar paredes)
-        Vector3 direction = nextPosition - _lastPosition;
-        float distance = direction.magnitude;
-
-        if (Physics.Raycast(_lastPosition, direction, out RaycastHit hit, distance))
+        while (timeLeft > 0)
         {
-            OnHit(hit);
-            return; // Detener actualización si impacta
+            float dt = Mathf.Min(timeLeft, SUB_STEP_TIME);
+
+            velocity += Vector3.down * gravity * dt;
+            Vector3 step = velocity * dt;
+            Vector3 nextPosition = transform.position + step;
+
+            Vector3 direction = nextPosition - _lastPosition;
+            float distance = direction.magnitude;
+
+            if (distance > 0)
+            {
+                if (Physics.Raycast(_lastPosition, direction.normalized, out RaycastHit hit, distance))
+                {
+                    transform.position = hit.point;
+                    OnHit(hit);
+                    return;
+                }
+            }
+
+            _lastPosition = transform.position;
+            transform.position = nextPosition;
+            _distanceTraveled += step.magnitude;
+            timeLeft -= dt;
         }
 
-        // 3. Actualizar posiciones lógicas
-        _lastPosition = transform.position;
-        transform.position = nextPosition;
-
-        // 4. Actualizar Estela (El truco de Apex)
         UpdateTracerVisuals();
 
-        // Autodestrucción por seguridad (fuera de límites)
         if (transform.position.y < -100f || _distanceTraveled > 2000f)
-            Destroy(gameObject);
-    }
-
-    void UpdateTracerVisuals()
-    {
-        // La punta de la bala (Posición 1) siempre es donde está el objeto Projectile
-        lr.SetPosition(1, transform.position);
-
-        // El origen de la bala (Posición 0)
-        if (_isAttached && _distanceTraveled < detachDistance && _muzzleAnchor != null)
-        {
-            // Mientras esté cerca, el origen sigue al cañón del arma aunque muevas la cámara
-            lr.SetPosition(0, _muzzleAnchor.position);
-        }
-        else
-        {
-            // Una vez lejos, el origen se suelta y empieza a perseguir a la punta
-            _isAttached = false;
-            Vector3 currentStart = lr.GetPosition(0);
-            lr.SetPosition(0, Vector3.Lerp(currentStart, transform.position, Time.deltaTime * 15f));
-
-            // Si el inicio casi alcanza a la punta, destruimos el objeto
-            if (Vector3.Distance(currentStart, transform.position) < 0.1f)
-            {
-                Destroy(gameObject);
-            }
-        }
+            gameObject.SetActive(false);
     }
 
     void OnHit(RaycastHit hit)
     {
-        // Aseguramos que la línea llegue hasta el punto de impacto
-        lr.SetPosition(1, hit.point);
-
-        // Lógica de daño aquí (ej. hit.collider.GetComponent<Health>().TakeDamage(damage);)
-        Debug.Log("Impactó en: " + hit.collider.name);
-
-        // Aquí conectamos con el sistema de IDamageable anterior
-        IDamageable target = hit.collider.GetComponent<IDamageable>();
-
-        if (target != null)
+        if (isLocal)
         {
-            DamageData data = new DamageData
+            IDamageable target = hit.collider.GetComponent<IDamageable>();
+            if (target != null)
             {
-                amount = 15f,
-                hitPoint = hit.point,
-                hitNormal = hit.normal,
-                type = DamageType.Bullet
-            };
-            target.TakeDamage(data);
+                DamageData data = new DamageData
+                {
+                    amount = this.damage,
+                    hitPoint = hit.point,
+                    hitNormal = hit.normal,
+                    type = DamageType.Bullet,
+                    instigator = null
+                };
+                target.TakeDamage(data);
+            }
         }
 
-        // Feedback visual de impacto (Impact Decals)
-       // Instantiate(impactEffectPrefab, hit.point, Quaternion.LookRotation(hit.normal));
-
-        Destroy(gameObject);
+        gameObject.SetActive(false);
     }
 
- 
+    void UpdateTracerVisuals()
+    {
+        if (lr.positionCount < 2) return;
+
+        // La punta (índice 1) siempre es la posición actual del proyectil
+        lr.SetPosition(1, transform.position);
+
+        if (_isAttached && _distanceTraveled < detachDistance && _muzzleAnchor != null)
+        {
+            // Mientras está cerca del cañón, la cola está pegada al arma
+            _visualTailPos = _muzzleAnchor.position;
+            lr.SetPosition(0, _visualTailPos);
+        }
+        else
+        {
+            _isAttached = false;
+
+            // EFECTO APEX: La cola sigue a la punta con un retraso (Lerp)
+            // Esto crea la ilusión de una bala estirada que viaja por el espacio
+            _visualTailPos = Vector3.Lerp(_visualTailPos, transform.position, Time.deltaTime * 25f);
+            lr.SetPosition(0, _visualTailPos);
+
+            // Si la cola alcanza a la punta, desactivamos (la bala "murió" visualmente)
+            if (Vector3.Distance(_visualTailPos, transform.position) < 0.1f)
+                gameObject.SetActive(false);
+        }
+    }
+
+    public void ResetProjectile()
+    {
+        _distanceTraveled = 0f;
+        _isAttached = true;
+        _lastPosition = transform.position;
+        _visualTailPos = transform.position; // Resetear posición visual
+        if (lr != null) lr.positionCount = 2;
+    }
 }
