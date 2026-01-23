@@ -38,7 +38,7 @@ public class WeaponSway : MonoBehaviour
     public float returnSpeedMultiplier = 6f;
 
     [Header("References")]
-    public SmoothPlayerController playerController;
+    public Movement playerController;
 
     [Space]
     public bool rotationX = true;
@@ -68,7 +68,7 @@ public class WeaponSway : MonoBehaviour
         initialRotation = transform.localRotation;
 
         if (playerController == null)
-            playerController = GetComponentInParent<SmoothPlayerController>();
+            playerController = GetComponentInParent<Movement>();
     }
 
     void LateUpdate()
