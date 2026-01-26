@@ -6,7 +6,6 @@ public class PlayerSetup : MonoBehaviourPunCallbacks
 {
     public Movement movement;
     public GameObject playerCamera; // Cambié el nombre porque 'camera' es palabra reservada en versiones viejas
-    [SerializeField] GameObject localHiddenObject;
 
     void Start()
     {
@@ -16,7 +15,6 @@ public class PlayerSetup : MonoBehaviourPunCallbacks
             // Soy yo: Activo mi movimiento y mi cámara
             movement.enabled = true;
             playerCamera.SetActive(true);
-            localHiddenObject.SetActive(false);
         }
         else
         {

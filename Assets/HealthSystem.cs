@@ -55,7 +55,7 @@ public class HealthSystem : MonoBehaviourPun
         // y si realmente tiene un PhotonView de jugador
         if (pv != null && pv.IsMine && gameObject.CompareTag("Player"))
         {
-            RespawnManager.Instance.RespawnPlayer(pv);
+            RespawnManager.Instance.RespawnPlayer();
         }
 
         // Lógica para destruir el cuerpo actual

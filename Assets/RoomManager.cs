@@ -1,44 +1,46 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using Photon.Pun;
 using Photon.Realtime;
 
 public class RoomManager : MonoBehaviourPunCallbacks
 {
-    public GameObject _player;
     public Transform[] spawnPoints;
+    public GameObject _player;
 
     void Start()
     {
-        Debug.Log("Iniciando conexión...");
+      Debug.Log("Connecting to Photon...");
         PhotonNetwork.ConnectUsingSettings();
     }
 
+    void Update()
+    {
+       
+    }
     public override void OnConnectedToMaster()
     {
-        Debug.Log("¡Conectado al Servidor Maestro!");
+        base.OnConnectedToMaster();
+
+               Debug.Log("Connected to Photon Master Server");
         PhotonNetwork.JoinLobby();
+       
     }
 
     public override void OnJoinedLobby()
     {
-        Debug.Log("¡En el Lobby!");
-        RoomOptions options = new RoomOptions { MaxPlayers = 4 };
-        PhotonNetwork.JoinOrCreateRoom("TestRoom", options, TypedLobby.Default);
+        base.OnJoinedLobby();
+
+        PhotonNetwork.JoinOrCreateRoom("MainRoom", new RoomOptions { MaxPlayers = 10 }, TypedLobby.Default);
+        Debug.Log("In a room"); 
+
+      
     }
 
     public override void OnJoinedRoom()
     {
-        Debug.Log("¡Dentro de la sala! Spawning player...");
-
-        // ActorNumber empieza en 1
-        int actorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
-
-        int spawnIndex = (actorNumber - 1) % spawnPoints.Length;
-
-        PhotonNetwork.Instantiate(
-            _player.name,
-            spawnPoints[spawnIndex].position,
-            spawnPoints[spawnIndex].rotation
-        );
+        base.OnJoinedRoom();
+        Debug.Log("Joined Room: " + PhotonNetwork.CurrentRoom.Name);
+        GameObject player = PhotonNetwork.Instantiate(_player.name,
+          spawnPoints[Random.Range(0, spawnPoints.Length)].position, Quaternion.identity);
     }
 }
