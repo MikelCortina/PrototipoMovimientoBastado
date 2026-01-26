@@ -610,15 +610,15 @@ MonoBehaviour:
   playerRb: {fileID: 6658693840184644042}
   playerTransform: {fileID: 5005802427535581013}
   baseFOV: 80
-  maxFOV: 120
-  speedThreshold: 13
+  maxFOV: 150
+  speedThreshold: 12.5
   maxSpeedForMaxFOV: 35
-  fovLerpSpeed: 6
-  kickDecaySpeed: 25
-  tiltAngle: 5
+  fovLerpSpeed: 9
+  kickDecaySpeed: 12.5
+  tiltAngle: -10
   tiltLerpSpeed: 8
-  shakeDuration: 0.15
-  shakeMagnitude: 0.1
+  shakeDuration: 0
+  shakeMagnitude: 0
 --- !u!1 &5557806296556694590
 GameObject:
   m_ObjectHideFlags: 0
@@ -639,6 +639,7 @@ GameObject:
   - component: {fileID: 7345972985465062705}
   - component: {fileID: 7899443596535319420}
   - component: {fileID: 8462529187637738336}
+  - component: {fileID: 4810133848739600695}
   m_Layer: 8
   m_Name: Player
   m_TagString: Untagged
@@ -945,6 +946,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHealth: 100
   currentHealth: 100
+--- !u!114 &4810133848739600695
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5557806296556694590}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 398d31b903d022d42b88e96bbe8a3969, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &5589451602009689024
 GameObject:
   m_ObjectHideFlags: 0
