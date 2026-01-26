@@ -144,7 +144,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2342334950393662547
 Transform:
   m_ObjectHideFlags: 0
@@ -305,7 +305,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &5630653077087663367
 Transform:
   m_ObjectHideFlags: 0
@@ -693,7 +693,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5557806296556694590}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 072da9d66329e4342a054d4f721db467, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -1056,6 +1056,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 355de93cc71f3654f81e477ccd10df4a, type: 3}
       insertIndex: -1
       addedObject: {fileID: 4719819612466125926}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 355de93cc71f3654f81e477ccd10df4a, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 493311796451750073}
   m_SourcePrefab: {fileID: 100100000, guid: 355de93cc71f3654f81e477ccd10df4a, type: 3}
 --- !u!4 &3637574633922549748 stripped
 Transform:
@@ -1095,6 +1098,39 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   recoilRecoverySpeed: 10
+--- !u!114 &493311796451750073
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4120954702070058318}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 70d3c0a20e690f24ba677841d2154b87, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  amount: 0.02
+  smoothAmount: 0.06
+  maxAmount: 6
+  rotationAmount: 5
+  rotationSmoothIn: 12
+  rotationSmoothOut: 6
+  maxRotationAmount: 10
+  tiltOnAscending: 2
+  tiltOnDescending: 4
+  maxAscendTilt: 15
+  maxDescendTilt: 25
+  tiltOnStrafeY: 2
+  tiltOnStrafeZ: 5
+  maxStrafeTiltY: 10
+  maxStrafeTiltZ: 15
+  tiltSmooth: 12
+  returnSpeedMultiplier: 6
+  playerController: {fileID: 3944350610710045756}
+  rotationX: 1
+  rotationY: 1
+  rotationZ: 1
 --- !u!4 &4182567426008934060 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1151388028547126963, guid: 355de93cc71f3654f81e477ccd10df4a, type: 3}
