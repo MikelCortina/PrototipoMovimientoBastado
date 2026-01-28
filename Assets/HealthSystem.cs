@@ -47,18 +47,25 @@ public class HealthSystem : MonoBehaviourPun
         Debug.Log($"Sincronizando vida de {gameObject.name}: {currentHealth}/{maxHealth}");
     }
 
+    // Dentro de HealthSystem.cs
     private void Die()
     {
-        PhotonView pv = GetComponent<PhotonView>();
-
-        // Solo pedimos respawn si es un jugador local (IsMine) 
-        // y si realmente tiene un PhotonView de jugador
-        if (pv != null && pv.IsMine && gameObject.CompareTag("Player"))
+        if (photonView.IsMine)
         {
-            RespawnManager.Instance.RespawnPlayer();
-        }
+            Debug.Log("Local player died, requesting respawn...");
 
-        // Lógica para destruir el cuerpo actual
-        PhotonNetwork.Destroy(gameObject);
+            // 1. Notificar al manager (debe estar en un objeto persistente en la escena)
+            if (RespawnManager.Instance != null)
+            {
+                RespawnManager.Instance.OnPlayerDied();
+            }
+            else
+            {
+                Debug.LogError("No existe RespawnManager en la escena!");
+            }
+
+            // 2. Destruir este objeto en la red
+            PhotonNetwork.Destroy(gameObject);
+        }
     }
 }

@@ -43,6 +43,9 @@ MonoBehaviour:
   - RPC_FireShotgun
   - RPC_FireSingle
   - RPC_SyncHealth
+  - RPC_GlobalRespawn
+  - RPC_SetMap
+  - RPC_NextMap
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1
