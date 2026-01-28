@@ -8,7 +8,7 @@ public class Projectile : MonoBehaviour
     private float gravity;
     private float damage;
     private Vector3 _lastPosition;
-
+  
     [HideInInspector] public bool isLocal;
     private Transform _muzzleAnchor;
     private bool _isAttached = true;
@@ -93,7 +93,18 @@ public class Projectile : MonoBehaviour
     {
         if (isLocal)
         {
+            // Buscamos el photonView o un script raíz en el objeto impactado
+            PhotonView hitPV = hit.collider.GetComponentInParent<PhotonView>();
+
+            // Si el PhotonView del que golpeamos es el nuestro, ignoramos el hit
+            if (hitPV != null && hitPV.IsMine)
+            {
+                gameObject.SetActive(false);
+                return;
+            }
+
             IDamageable target = hit.collider.GetComponent<IDamageable>();
+         
             if (target != null)
             {
                 DamageData data = new DamageData

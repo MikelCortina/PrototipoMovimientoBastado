@@ -2,60 +2,71 @@ using UnityEngine;
 using Photon.Pun;
 using System.Collections;
 
-public class RespawnManager : MonoBehaviour
+public class RespawnManager : MonoBehaviourPunCallbacks
 {
     public static RespawnManager Instance;
-
-    [Header("Configuración")]
-    public string playerPrefabName = "Player";
-    public float respawnDelay = 3f;
-    public Transform[] spawnPoints;
-
-    private bool isRespawning = false; // Seguridad para evitar duplicados por spam
+    public RoomManager roomManager;
+    public float respawnDelay = 1.5f;
+    private bool isResetting = false;
 
     void Awake()
     {
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
+        if (Instance == null) Instance = this;
     }
 
-    // Añadimos el parámetro PhotonView para saber QUIÉN murió
-    public void RespawnPlayer(PhotonView targetView)
+    public void OnPlayerDied()
     {
-        // SEGURIDAD 1: Solo el dueño de ese PhotonView puede pedir respawn
-        if (targetView != null && !targetView.IsMine) return;
+        if (isResetting) return; // Si ya estamos cambiando de mapa, ignorar
 
-        // SEGURIDAD 2: Evitar que se ejecuten múltiples corrutinas de respawn a la vez
-        if (isRespawning) return;
-
-        StartCoroutine(RespawnCoroutine());
+        isResetting = true;
+        photonView.RPC("RPC_NextMap", RpcTarget.All);
     }
 
-    private IEnumerator RespawnCoroutine()
+    [PunRPC]
+    private void RPC_NextMap()
     {
-        isRespawning = true;
+        isResetting = true; // Bloquear en todos los clientes
+        StartCoroutine(SwitchMapSequence());
+    }
+
+    private IEnumerator SwitchMapSequence()
+    {
+        isResetting = true;
+
+        // 1. CADA cliente busca y destruye SU propio jugador
+        // No importa quién murió, ambos deben desaparecer para ir al nuevo mapa
+        GameObject myPlayer = null;
+        PhotonView[] allViews = FindObjectsOfType<PhotonView>();
+        foreach (PhotonView view in allViews)
+        {
+            if (view.IsMine && view.CompareTag("Player"))
+            {
+                myPlayer = view.gameObject;
+                break;
+            }
+        }
+
+        if (myPlayer != null)
+        {
+            PhotonNetwork.Destroy(myPlayer);
+        }
+
+        // 2. Pausa para visualización (muerte, fundido a negro, etc.)
         yield return new WaitForSeconds(respawnDelay);
 
-        if (PhotonNetwork.InRoom)
+        // 3. SOLO el Master incrementa el índice
+        if (PhotonNetwork.IsMasterClient)
         {
-            int actorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
-            int spawnIndex = (actorNumber - 1) % spawnPoints.Length;
+            int currentIndex = (int)PhotonNetwork.CurrentRoom.CustomProperties["CurrentMapIndex"];
+            // Usamos el conteo de mapas del RoomManager
+            int nextIndex = (currentIndex + 1) % roomManager.maps.Count;
 
-            Transform selectedPoint = spawnPoints[spawnIndex];
-
-            PhotonNetwork.Instantiate(
-                playerPrefabName,
-                selectedPoint.position,
-                selectedPoint.rotation
-            );
+            ExitGames.Client.Photon.Hashtable props = new ExitGames.Client.Photon.Hashtable();
+            props.Add("CurrentMapIndex", nextIndex);
+            PhotonNetwork.CurrentRoom.SetCustomProperties(props);
         }
 
-        isRespawning = false;
+        // 4. Importante: Resetear el candado para permitir la siguiente muerte
+        isResetting = false;
     }
 }

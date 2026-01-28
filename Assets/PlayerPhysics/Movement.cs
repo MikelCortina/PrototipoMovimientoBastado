@@ -337,13 +337,14 @@ public class Movement : MonoBehaviourPun
             wallNormal = bestHit.normal;
             float lookDot = Vector3.Dot(transform.forward, wallNormal);
 
-            // WALL RIDE: Se activa si no estamos mirando directamente AL INTERIOR de la pared (normal vs forward)
-            // De frente, lookDot es -1. De lado es 0. 
-            if (lookDot < 0.9f) // Casi cualquier ángulo sirve para tocar la pared
+            // CAMBIO: Antes tenías 0.9f. Cámbialo a -0.6f.
+            // Explicación: -1 es mirar de frente, 0 es paralelo. 
+            // Al poner -0.6f permites que el wallride se active aunque choques de frente.
+            if (lookDot < 0.9f) // <-- Cambia este valor si quieres que sea aún más permisivo (ej: 1.0f)
             {
                 touchingWall = true;
                 if (dynamicFOV) dynamicFOV.SetWallTilt(wallNormal);
-                wallTimer = wallCoyoteTime; // Permitimos el salto siempre que estemos tocando
+                wallTimer = wallCoyoteTime;
             }
         }
         if (!touchingWall && dynamicFOV)
@@ -397,11 +398,19 @@ public class Movement : MonoBehaviourPun
         }
         if (wallRunning)
         {
-            // --- NUEVO: Capturar velocidad al entrar ---
             if (!wasWallRunningLastFrame)
             {
-                // Guardamos la magnitud actual, pero nos aseguramos de que sea al menos la velocidad base
+                // 1. Guardamos la velocidad de entrada
                 speedAtWallEntry = Mathf.Max(rb.linearVelocity.magnitude, maxSpeed);
+
+                // 2. REDIRECCIÓN (Añade estas líneas):
+                // Proyectamos la velocidad actual en el plano de la pared para no perder inercia
+                Vector3 currentVel = rb.linearVelocity;
+                Vector3 velocityOnWall = Vector3.ProjectOnPlane(currentVel, wallNormal);
+
+                // Aplicamos la nueva dirección manteniendo la magnitud que traíamos
+                rb.linearVelocity = velocityOnWall.normalized * speedAtWallEntry;
+
                 wasWallRunningLastFrame = true;
             }
 

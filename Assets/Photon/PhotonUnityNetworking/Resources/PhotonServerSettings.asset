@@ -19,7 +19,7 @@ MonoBehaviour:
     AppIdVoice: 
     AppVersion: 
     UseNameServer: 1
-    FixedRegion: 
+    FixedRegion: eu
     Server: 
     Port: 0
     ProxyServer: 
@@ -27,7 +27,7 @@ MonoBehaviour:
     EnableProtocolFallback: 1
     AuthMode: 0
     EnableLobbyStatistics: 0
-    NetworkLogging: 1
+    NetworkLogging: 5
   DevRegion: eu
   PunLogging: 0
   EnableSupportLogger: 0
@@ -43,6 +43,9 @@ MonoBehaviour:
   - RPC_FireShotgun
   - RPC_FireSingle
   - RPC_SyncHealth
+  - RPC_GlobalRespawn
+  - RPC_SetMap
+  - RPC_NextMap
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1
