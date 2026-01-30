@@ -46,6 +46,10 @@ MonoBehaviour:
   - RPC_GlobalRespawn
   - RPC_SetMap
   - RPC_NextMap
+  - RPC_StartMapTransition
+  - RPC_UpdateSlideVisuals
+  - RPC_TriggerDash
+  - RPC_TriggerJump
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1
