@@ -81,11 +81,20 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     // --- Métodos obligatorios de la interfaz (Vacíos) ---
     public void OnInput(NetworkRunner runner, NetworkInput input)
     {
-        // Find the local player's input handler and pack it into the Fusion input system
-        var localHandler = FindFirstObjectByType<LocalInputHandler>();
-        if (localHandler != null)
+        // Busca TODOS los handlers en la escena
+        var handlers = FindObjectsByType<LocalInputHandler>(FindObjectsSortMode.None);
+
+        foreach (var handler in handlers)
         {
-            input.Set(localHandler.GetNetworkInput());
+            // Solo extraemos el input si:
+            // 1. El objeto es válido.
+            // 2. Pertenece a este Runner (vital si pruebas 2 jugadores en el mismo Unity).
+            // 3. Nosotros somos los dueños (InputAuthority).
+            if (handler.Object != null && handler.Object.Runner == runner && handler.HasInputAuthority)
+            {
+                input.Set(handler.GetNetworkInput());
+                break; // Ya encontramos el nuestro, dejamos de buscar
+            }
         }
     }
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
