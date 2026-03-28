@@ -5,15 +5,18 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Lobby.unity
     guid: 392d33cdf8de4d04eafe1c3ccd3fe109
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Game.unity
     guid: 99c9720ab356a0642a771bea13969a05
   - enabled: 0
     path: Assets/Scenes/New Scene.unity
     guid: e17a9c649054e1b4dbed40fa53eb008f
+  - enabled: 1
+    path: Assets/Scenes/Fusion2Migracion.unity
+    guid: c582b2414f1caa340a6f3920ddd2617f
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
