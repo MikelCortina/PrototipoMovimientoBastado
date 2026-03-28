@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using Photon.Pun;
 
 public class PlayerAnimations : MonoBehaviourPun
@@ -7,14 +7,24 @@ public class PlayerAnimations : MonoBehaviourPun
     private Animator anim;
     private Rigidbody rb;
 
-    // Nombres de los parámetros en tu Animator Controller
-    [Header("Animation Parameters")]
+    // Control para detectar cambios de estado (evita spam en consola)
+    private bool wasWallRunningLastFrame = false;
+
+    [Header("Debug Settings")]
+    public bool showDebugLogs = true;
+
+    [Header("Animator Parameters")]
     public string horizontalParam = "Horizontal";
     public string verticalParam = "Vertical";
     public string isGroundedParam = "isGrounded";
     public string isWallRunningParam = "isWallRunning";
     public string jumpTrigger = "Jump";
     public string dashTrigger = "Dash";
+    public string FallDashTrigger = "FallDash";
+    public string yVelocityParam = "YVelocity";
+
+    public string isShootingParam = "isShooting";
+
 
     void Awake()
     {
@@ -25,49 +35,158 @@ public class PlayerAnimations : MonoBehaviourPun
 
     void Update()
     {
-        // Solo el dueño del personaje calcula las animaciones
-        if (!photonView.IsMine && PhotonNetwork.IsConnected) return;
+        // Solo el dueÃ±o del personaje calcula y setea los parÃ¡metros en SU animador.
+        if (!photonView.IsMine && PhotonNetwork.IsConnected)
+            return;
 
-        UpdateMovementAnimations();
+        UpdateGroundMovement();
+        UpdateAirState();
+      
     }
 
-    void UpdateMovementAnimations()
+    void UpdateGroundMovement()
     {
-        // 1. Movimiento Básico (Blend Tree)
-        // Usamos la velocidad local para que el Animator sepa si vamos adelante, atrás o a los lados
+        // 1. Calculamos velocidad local
         Vector3 localVelocity = transform.InverseTransformDirection(rb.linearVelocity);
 
-        anim.SetFloat(horizontalParam, localVelocity.x, 0.1f, Time.deltaTime);
-        anim.SetFloat(verticalParam, localVelocity.z, 0.1f, Time.deltaTime);
+        // 2. Obtenemos el input del script de movimiento para saber si el jugador QUIERE moverse
+        // Esto es mucho mÃ¡s fiable que solo usar la velocidad del Rigidbody
+        Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
 
-        // 2. Estados de Aire y Pared
-        anim.SetBool(isGroundedParam, moveScript.grounded);
+        float targetHorizontal = localVelocity.x;
+        float targetVertical = localVelocity.z;
 
-        // Accedemos a la variable privada wallRunning mediante una pequeña modificación o reflexión
-        // Pero como en tu script es privada, lo ideal es que la pongas pública o hagas un Getter.
-        // Asumiendo que detectamos Wallrun por la lógica de tu script:
-        bool isWallRunning = !moveScript.grounded && moveScript.rb.useGravity == false; // O simplificar según tu lógica
-        anim.SetBool(isWallRunningParam, isWallRunning);
+        // --- MEJORA PARA IDLE ---
+        // Si no hay input y la velocidad es baja, forzamos CERO absoluto
+        float stopThreshold = 0.5f; // Bajamos de 3f a 0.5f
+        if (input.sqrMagnitude < 0.01f && localVelocity.magnitude < stopThreshold)
+        {
+            targetHorizontal = 0f;
+            targetVertical = 0f;
+
+            // Usamos un DampTime mÃ¡s pequeÃ±o para que el Idle entre rÃ¡pido
+            anim.SetFloat(horizontalParam, 0f, 0.05f, Time.deltaTime);
+            anim.SetFloat(verticalParam, 0f, 0.05f, Time.deltaTime);
+        }
+        else
+        {
+            // Si nos estamos moviendo, usamos el suavizado normal
+            anim.SetFloat(horizontalParam, targetHorizontal, 0.1f, Time.deltaTime);
+            anim.SetFloat(verticalParam, targetVertical, 0.1f, Time.deltaTime);
+        }
+    }
+    void UpdateAirState()
+    {
+        bool isGrounded = moveScript.grounded;
+        anim.SetBool(isGroundedParam, isGrounded);
+        anim.SetFloat(yVelocityParam, rb.linearVelocity.y);
+
+        UpdateWallRunAnimations();
     }
 
-    // --- Sincronización de Triggers vía RPC ---
-    // Los Triggers de Animator a veces fallan en Photon si no se envían explícitamente
+    void UpdateWallRunAnimations()
+    {
+        bool wallRunning = moveScript.IsWallRunning;
+        int side = moveScript.WallRunSide;
 
+        // --- SISTEMA DE DEBUG ---
+        if (showDebugLogs)
+        {
+            // Detectar cuando el bool PASA A SER TRUE
+            if (wallRunning && !wasWallRunningLastFrame)
+            {
+                string lado = (side == -1) ? "IZQUIERDA" : (side == 1 ? "DERECHA" : "DESCONOCIDO");
+                Debug.Log($"<color=green><b>[WALLRUN START]</b></color> Estado: {wallRunning} | Lado: {lado} ({side})");
+            }
+            // Detectar cuando el bool PASA A SER FALSE
+            else if (!wallRunning && wasWallRunningLastFrame)
+            {
+                Debug.Log("<color=red><b>[WALLRUN END]</b></color> El bool 'isWallRunning' ahora es FALSE.");
+            }
+        }
+
+        // Guardamos el estado para comparar en el siguiente frame
+        wasWallRunningLastFrame = wallRunning;
+        // -------------------------
+
+      
+
+        if (!wallRunning)
+        {
+            anim.SetBool("wallRunLeft", false);
+            anim.SetBool("wallRunRight", false);
+            return;
+        }
+
+        // Seteamos los bools especÃ­ficos de lado
+        anim.SetBool("wallRunLeft", side == -1);
+        anim.SetBool("wallRunRight", side == 1);
+    }
+
+    // -----------------------------
+    // TRIGGERS SINCRONIZADOS (RPCs)
+    // -----------------------------
     public void TriggerJump()
     {
         if (photonView.IsMine)
-            photonView.RPC("RPC_TriggerJump", RpcTarget.All);
+            photonView.RPC(nameof(RPC_TriggerJump), RpcTarget.All);
     }
 
-    public void TriggerDash()
+    public void TriggerDash(float x, float y)
     {
         if (photonView.IsMine)
-            photonView.RPC("RPC_TriggerDash", RpcTarget.All);
+            photonView.RPC(nameof(RPC_TriggerDash), RpcTarget.All, x, y);
+    }
+
+    public void TriggerFallDash()
+    {
+        if (photonView.IsMine)
+            photonView.RPC(nameof(RPC_TriggerDash), RpcTarget.All);
+    }
+
+
+    [PunRPC]
+    void RPC_TriggerJump()
+    {
+        if (anim == null) return;
+        // Forzamos la limpieza por si acaso quedÃ³ uno atascado de un lag spike
+        anim.ResetTrigger(jumpTrigger);
+        anim.SetTrigger(jumpTrigger);
     }
 
     [PunRPC]
-    void RPC_TriggerJump() => anim.SetTrigger(jumpTrigger);
+    void RPC_TriggerDash(float x, float y)
+    {
+        if (anim == null) return;
+
+        // Seteamos la direcciÃ³n exacta del dash ANTES del trigger
+        anim.SetFloat(horizontalParam, x);
+        anim.SetFloat(verticalParam, y);
+
+        anim.ResetTrigger(dashTrigger);
+        anim.SetTrigger(dashTrigger);
+    }
+
 
     [PunRPC]
-    void RPC_TriggerDash() => anim.SetTrigger(dashTrigger);
+    void RPC_TriggerFallDash()
+    {
+        if (anim == null) return;
+        anim.ResetTrigger(FallDashTrigger);
+        anim.SetTrigger(FallDashTrigger);
+    }
+
+    public void SetShooting(bool value)
+    {
+        if (!photonView.IsMine) return;
+
+        photonView.RPC(nameof(RPC_SetShooting), RpcTarget.All, value);
+    }
+
+    [PunRPC]
+    void RPC_SetShooting(bool value)
+    {
+        if (anim == null) return;
+        anim.SetBool(isShootingParam, value);
+    }
 }

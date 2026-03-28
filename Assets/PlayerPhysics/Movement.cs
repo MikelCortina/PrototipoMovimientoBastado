@@ -30,6 +30,7 @@ public class Movement : MonoBehaviourPun
     public float dashCooldown = 0.5f;
     public float dashMaxSpeedBoost = 18f;
     public float maxSpeedDecayRate = 12f;
+    public bool dashAnimMade = true;
 
     [Header("Dash + salto con inercia")]
     public float dashHoldThreshold = 0.2f;
@@ -79,6 +80,9 @@ public class Movement : MonoBehaviourPun
     public float wallRunGravity = 5f;
 
     private bool wallRunning;
+    public bool IsWallRunning => wallRunning;
+    public int WallRunSide { get; private set; }
+
     private bool spaceHeldLastFrame;
     public float wallRideLookThreshold = 0.75f;     // ← NUEVO (antes era rideLookThreshold = -0.05f)
     public float wallJumpLookThreshold = -0.20f;    // ← antes era -0.3f (un poco más permisivo)
@@ -112,6 +116,8 @@ public class Movement : MonoBehaviourPun
     private bool wasWallRunningLastFrame;
     private float peakBhopSpeed; // Almacena la velocidad más alta de la cadena actual
 
+    private PlayerAnimations playerAnims;
+
 
     [HideInInspector] public bool justLanded = false;
 
@@ -123,6 +129,7 @@ public class Movement : MonoBehaviourPun
         rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         currentMaxSpeed = maxSpeed;
+        playerAnims = GetComponent<PlayerAnimations>();
     }
 
     void Start()
@@ -130,6 +137,15 @@ public class Movement : MonoBehaviourPun
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         Time.fixedDeltaTime = 0.0025f;
+
+         // PhotonNetwork.OfflineMode = true;
+        
+        // Opcional pero recomendado
+     //  PhotonNetwork.NickName = "OfflinePlayer";
+
+        // Crear una room offline
+       // PhotonNetwork.CreateRoom("OfflineRoom");
+
     }
 
     void Update()
@@ -145,6 +161,7 @@ public class Movement : MonoBehaviourPun
         dashTimer -= Time.deltaTime;
         if (Input.GetKeyDown(KeyCode.LeftShift) && dashTimer <= 0f && inputDir.sqrMagnitude > 0.01f)
         {
+            
             Dash();
             dashTimer = dashCooldown;
             dashButtonHeld = true;
@@ -173,6 +190,7 @@ public class Movement : MonoBehaviourPun
         // Salto normal
         if (Input.GetKeyDown(KeyCode.Space) && grounded)
         {
+           
             Vector3 v = rb.linearVelocity;
             float currentHorizontalSpeed = new Vector3(v.x, 0f, v.z).magnitude;
             v.y = 0f;
@@ -180,6 +198,7 @@ public class Movement : MonoBehaviourPun
 
             rb.AddForce(Vector3.up * jumpForce, ForceMode.VelocityChange);
             grounded = false;
+            playerAnims.TriggerJump(); // <--- AÑADIR ESTO
             dashPendingJump = false;
             hasJumped = true;
 
@@ -246,6 +265,7 @@ public class Movement : MonoBehaviourPun
 
     void FixedUpdate()
     {
+
         justLanded = false;
         // Ground check
         Vector3 rayOrigin = transform.position + Vector3.up * 0.1f;
@@ -286,6 +306,11 @@ public class Movement : MonoBehaviourPun
 
         if (groundedNow)
         {
+            if (!dashAnimMade && !dashDecayDone)
+            {
+                playerAnims.TriggerDash(inputDir.x, inputDir.z);
+                dashAnimMade = true;
+            }
             hasWallJumpedSinceGround = false;
             lastWallNormal = Vector3.zero;
             wallTimer = 0f;
@@ -335,21 +360,29 @@ public class Movement : MonoBehaviourPun
         if (foundWall)
         {
             wallNormal = bestHit.normal;
-            float lookDot = Vector3.Dot(transform.forward, wallNormal);
 
-            // CAMBIO: Antes tenías 0.9f. Cámbialo a -0.6f.
-            // Explicación: -1 es mirar de frente, 0 es paralelo. 
-            // Al poner -0.6f permites que el wallride se active aunque choques de frente.
-            if (lookDot < 0.9f) // <-- Cambia este valor si quieres que sea aún más permisivo (ej: 1.0f)
+            float lookDot = Vector3.Dot(transform.forward, wallNormal);
+            if (lookDot < 0.9f)
             {
                 touchingWall = true;
-                if (dynamicFOV) dynamicFOV.SetWallTilt(wallNormal);
                 wallTimer = wallCoyoteTime;
+
+                // 🔥 LADO DE WALLRUN (igual que el tilt)
+                float sideDot = Vector3.Dot(transform.right, wallNormal);
+                WallRunSide = sideDot > 0 ? 1 : -1;
+
+                if (dynamicFOV)
+                    dynamicFOV.SetWallTilt(wallNormal);
             }
+        }
+        else
+        {
+            WallRunSide = 0;
         }
         if (!touchingWall && dynamicFOV)
         {
             dynamicFOV.ResetTilt();
+            WallRunSide = 0;
         }
 
         
@@ -544,6 +577,7 @@ public class Movement : MonoBehaviourPun
 
     void Dash()
     {
+
         if (inputDir.sqrMagnitude < 0.01f) return;
 
         Vector3 horizontalDir = transform.TransformDirection(inputDir).normalized;
@@ -572,6 +606,7 @@ public class Movement : MonoBehaviourPun
         dashDecayDone = false;
         dashLockTimer = dashMomentumLockTime;
         dashLockedDirection = dashDir;
+        dashAnimMade = false;
 
        
     }
@@ -613,6 +648,7 @@ public class Movement : MonoBehaviourPun
 
     void DashJump()
     {
+        playerAnims.TriggerJump(); // <--- AÑADIR ESTO
         Vector3 dashDir = inputDir.sqrMagnitude > 0.01f
             ? transform.TransformDirection(inputDir)
             : new Vector3(cameraTransform.forward.x, 0f, cameraTransform.forward.z).normalized;

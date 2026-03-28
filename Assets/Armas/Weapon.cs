@@ -36,14 +36,39 @@ public class WeaponR301 : MonoBehaviourPun
     public GameObject bulletPrefab;
     public Recoil recoil;
 
+    private PlayerAnimations playerAnimations;
+
     private float _nextFireTime;
     private float _nextShotgunTime;
     private float _currentBloomDegrees = 0f;
 
+    private bool isShootingHeld = false;
+
+
+    void Start()
+    {
+        // Buscamos el script en el mismo objeto o en los padres (según donde esté tu Player)
+        playerAnimations = GetComponent<PlayerAnimations>();
+
+        if (playerAnimations == null)
+        {
+            Debug.LogError("No se encontró PlayerAnimations en el jugador.");
+        }
+    }
     void Update()
     {
         if (!photonView.IsMine) return;
+        if (Input.GetButtonDown("Fire1"))
+        {
+            isShootingHeld = true;
+            playerAnimations?.SetShooting(true);
+        }
 
+        if (Input.GetButtonUp("Fire1"))
+        {
+            isShootingHeld = false;
+            playerAnimations?.SetShooting(false);
+        }
         // Disparo Normal
         if (Input.GetButton("Fire1") && Time.time >= _nextFireTime)
         {
@@ -51,6 +76,8 @@ public class WeaponR301 : MonoBehaviourPun
 
             int seed = Random.Range(0, 99999);
             Vector3 targetPoint = GetCameraTargetPoint();
+
+         
 
             // OPTIMIZACIÓN: Ya no enviamos el 'origin'. El receptor lo tomará de su muzzlePoint local.
             photonView.RPC("RPC_FireSingle", RpcTarget.All, seed, _currentBloomDegrees, targetPoint);
@@ -61,6 +88,8 @@ public class WeaponR301 : MonoBehaviourPun
         else
         {
             _currentBloomDegrees = Mathf.MoveTowards(_currentBloomDegrees, 0f, recoverRate * Time.deltaTime);
+          
+
         }
 
         // Modo Escopeta
