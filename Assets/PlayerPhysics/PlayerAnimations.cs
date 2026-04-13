@@ -1,14 +1,17 @@
-﻿using UnityEngine;
-using Photon.Pun;
+﻿using Fusion;
+using UnityEngine;
 
-public class PlayerAnimations : MonoBehaviourPun
+public class PlayerAnimations : NetworkBehaviour
 {
-    private Movement moveScript;
+    private FusionMovement moveScript;
     private Animator anim;
     private Rigidbody rb;
 
-    // Control para detectar cambios de estado (evita spam en consola)
     private bool wasWallRunningLastFrame = false;
+
+    // --- SOLUCIÓN: VELOCIDAD VISUAL PARA LOS CLONES ---
+    private Vector3 lastPosition;
+    private Vector3 visualVelocity;
 
     [Header("Debug Settings")]
     public bool showDebugLogs = true;
@@ -25,61 +28,79 @@ public class PlayerAnimations : MonoBehaviourPun
 
     public string isShootingParam = "isShooting";
 
-
     void Awake()
     {
-        moveScript = GetComponent<Movement>();
+        moveScript = GetComponent<FusionMovement>();
         anim = GetComponentInChildren<Animator>();
         rb = GetComponent<Rigidbody>();
     }
 
-    void Update()
+    public override void Spawned()
     {
-        // Solo el dueño del personaje calcula y setea los parámetros en SU animador.
-        if (!photonView.IsMine && PhotonNetwork.IsConnected)
-            return;
+        // Guardamos la posición inicial al aparecer en la red
+        lastPosition = transform.position;
+    }
+
+    // Usamos Render en lugar de Update para animaciones suaves en Fusion
+    public override void Render()
+    {
+        if (!Object || !Object.IsValid || anim == null) return;
+
+        // 1. Calculamos la velocidad basándonos en el movimiento real del objeto.
+        // Esto salva la vida en multiplayer porque los clones no tienen velocidad en su Rigidbody.
+        if (Time.deltaTime > 0)
+        {
+            visualVelocity = (transform.position - lastPosition) / Time.deltaTime;
+            lastPosition = transform.position;
+        }
 
         UpdateGroundMovement();
         UpdateAirState();
-      
     }
 
     void UpdateGroundMovement()
     {
-        // 1. Calculamos velocidad local
-        Vector3 localVelocity = transform.InverseTransformDirection(rb.linearVelocity);
+        bool isMine = Object.HasInputAuthority || (Runner.Topology == Topologies.Shared && Object.HasStateAuthority);
 
-        // 2. Obtenemos el input del script de movimiento para saber si el jugador QUIERE moverse
-        // Esto es mucho más fiable que solo usar la velocidad del Rigidbody
-        Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        // El dueño lee su Rigidbody real (más preciso). Los clones leen la velocidad visual.
+        Vector3 velocityToUse = isMine ? rb.linearVelocity : visualVelocity;
+
+        // Calculamos velocidad local
+        Vector3 localVelocity = transform.InverseTransformDirection(velocityToUse);
 
         float targetHorizontal = localVelocity.x;
         float targetVertical = localVelocity.z;
 
         // --- MEJORA PARA IDLE ---
-        // Si no hay input y la velocidad es baja, forzamos CERO absoluto
-        float stopThreshold = 0.5f; // Bajamos de 3f a 0.5f
-        if (input.sqrMagnitude < 0.01f && localVelocity.magnitude < stopThreshold)
+        float stopThreshold = 0.5f;
+
+        // Nos guiamos principalmente por la velocidad real (localVelocity) en lugar del input
+        // para asegurar que la animación coincida perfectamente con el movimiento visual en red.
+        if (localVelocity.magnitude < stopThreshold)
         {
             targetHorizontal = 0f;
             targetVertical = 0f;
 
-            // Usamos un DampTime más pequeño para que el Idle entre rápido
             anim.SetFloat(horizontalParam, 0f, 0.05f, Time.deltaTime);
             anim.SetFloat(verticalParam, 0f, 0.05f, Time.deltaTime);
         }
         else
         {
-            // Si nos estamos moviendo, usamos el suavizado normal
             anim.SetFloat(horizontalParam, targetHorizontal, 0.1f, Time.deltaTime);
             anim.SetFloat(verticalParam, targetVertical, 0.1f, Time.deltaTime);
         }
     }
+
     void UpdateAirState()
     {
-        bool isGrounded = moveScript.grounded;
+        bool isMine = Object.HasInputAuthority || (Runner.Topology == Topologies.Shared && Object.HasStateAuthority);
+        Vector3 velocityToUse = isMine ? rb.linearVelocity : visualVelocity;
+
+        bool isGrounded = moveScript.grounded; // Esta variable sí viaja por la red correctamente
         anim.SetBool(isGroundedParam, isGrounded);
-        anim.SetFloat(yVelocityParam, rb.linearVelocity.y);
+
+        // ¡AQUÍ ESTABA EL ERROR DEL SALTO! Ahora los clones leen la caída correctamente.
+        anim.SetFloat(yVelocityParam, velocityToUse.y);
 
         UpdateWallRunAnimations();
     }
@@ -89,27 +110,20 @@ public class PlayerAnimations : MonoBehaviourPun
         bool wallRunning = moveScript.IsWallRunning;
         int side = moveScript.WallRunSide;
 
-        // --- SISTEMA DE DEBUG ---
         if (showDebugLogs)
         {
-            // Detectar cuando el bool PASA A SER TRUE
             if (wallRunning && !wasWallRunningLastFrame)
             {
                 string lado = (side == -1) ? "IZQUIERDA" : (side == 1 ? "DERECHA" : "DESCONOCIDO");
                 Debug.Log($"<color=green><b>[WALLRUN START]</b></color> Estado: {wallRunning} | Lado: {lado} ({side})");
             }
-            // Detectar cuando el bool PASA A SER FALSE
             else if (!wallRunning && wasWallRunningLastFrame)
             {
                 Debug.Log("<color=red><b>[WALLRUN END]</b></color> El bool 'isWallRunning' ahora es FALSE.");
             }
         }
 
-        // Guardamos el estado para comparar en el siguiente frame
         wasWallRunningLastFrame = wallRunning;
-        // -------------------------
-
-      
 
         if (!wallRunning)
         {
@@ -118,7 +132,6 @@ public class PlayerAnimations : MonoBehaviourPun
             return;
         }
 
-        // Seteamos los bools específicos de lado
         anim.SetBool("wallRunLeft", side == -1);
         anim.SetBool("wallRunRight", side == 1);
     }
@@ -128,63 +141,56 @@ public class PlayerAnimations : MonoBehaviourPun
     // -----------------------------
     public void TriggerJump()
     {
-        if (photonView.IsMine)
-            photonView.RPC(nameof(RPC_TriggerJump), RpcTarget.All);
+        if (Object.HasInputAuthority || Object.HasStateAuthority)
+            RPC_TriggerJump();
     }
 
     public void TriggerDash(float x, float y)
     {
-        if (photonView.IsMine)
-            photonView.RPC(nameof(RPC_TriggerDash), RpcTarget.All, x, y);
+        if (Object.HasInputAuthority || Object.HasStateAuthority)
+            RPC_TriggerDash(x, y);
     }
 
     public void TriggerFallDash()
     {
-        if (photonView.IsMine)
-            photonView.RPC(nameof(RPC_TriggerDash), RpcTarget.All);
+        if (Object.HasInputAuthority || Object.HasStateAuthority)
+            RPC_TriggerFallDash();
     }
 
+    public void SetShooting(bool value)
+    {
+        if (Object.HasInputAuthority || Object.HasStateAuthority)
+            RPC_SetShooting(value);
+    }
 
-    [PunRPC]
-    void RPC_TriggerJump()
+    [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_TriggerJump()
     {
         if (anim == null) return;
-        // Forzamos la limpieza por si acaso quedó uno atascado de un lag spike
         anim.ResetTrigger(jumpTrigger);
         anim.SetTrigger(jumpTrigger);
     }
 
-    [PunRPC]
-    void RPC_TriggerDash(float x, float y)
+    [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_TriggerDash(float x, float y)
     {
         if (anim == null) return;
-
-        // Seteamos la dirección exacta del dash ANTES del trigger
         anim.SetFloat(horizontalParam, x);
         anim.SetFloat(verticalParam, y);
-
         anim.ResetTrigger(dashTrigger);
         anim.SetTrigger(dashTrigger);
     }
 
-
-    [PunRPC]
-    void RPC_TriggerFallDash()
+    [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_TriggerFallDash()
     {
         if (anim == null) return;
         anim.ResetTrigger(FallDashTrigger);
         anim.SetTrigger(FallDashTrigger);
     }
 
-    public void SetShooting(bool value)
-    {
-        if (!photonView.IsMine) return;
-
-        photonView.RPC(nameof(RPC_SetShooting), RpcTarget.All, value);
-    }
-
-    [PunRPC]
-    void RPC_SetShooting(bool value)
+    [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_SetShooting(NetworkBool value)
     {
         if (anim == null) return;
         anim.SetBool(isShootingParam, value);

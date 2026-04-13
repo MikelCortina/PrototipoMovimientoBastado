@@ -1,7 +1,7 @@
-﻿using UnityEngine;
-using Photon.Pun;
+﻿using Fusion;
+using UnityEngine;
 
-public class ManualBoneIK : MonoBehaviourPun, IPunObservable
+public class ManualBoneIK : NetworkBehaviour
 {
     private Animator animator;
 
@@ -26,8 +26,10 @@ public class ManualBoneIK : MonoBehaviourPun, IPunObservable
     private Transform rightUpperArm;
     private Transform leftUpperArm;
 
-    // Network
-    private Vector3 networkAimPosition;
+    // --- NETWORK ---
+    // En Fusion, [Networked] reemplaza a OnPhotonSerializeView. 
+    // Fusion sincroniza esto automáticamente por la red.
+    [Networked] private Vector3 NetworkAimPosition { get; set; }
 
     public enum VerticalAxis { X, Y, Z }
 
@@ -45,26 +47,36 @@ public class ManualBoneIK : MonoBehaviourPun, IPunObservable
         leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
     }
 
-    void LateUpdate()
+    // En Fusion, los cambios de estado (como actualizar una variable [Networked]) 
+    // deben hacerse en FixedUpdateNetwork para asegurar la precisión de los ticks y el rollback.
+    public override void FixedUpdateNetwork()
     {
-        if (!photonView.IsMine || objTarget == null) return;
+        if (objTarget == null) return;
 
-        networkAimPosition = objTarget.position;
+        bool isMine = Object.HasInputAuthority || (Runner.Topology == Topologies.Shared && Object.HasStateAuthority);
+
+        if (isMine)
+        {
+            NetworkAimPosition = objTarget.position;
+        }
     }
 
     void OnAnimatorIK(int layerIndex)
     {
-        if (animator == null) return;
+        // Validamos que el objeto exista en la red de Fusion antes de calcular IK
+        if (animator == null || !Object || !Object.IsValid) return;
 
-        Vector3 aimPos =
-            photonView.IsMine && objTarget != null
-            ? objTarget.position
-            : networkAimPosition;
+        bool isMine = Object.HasInputAuthority || (Runner.Topology == Topologies.Shared && Object.HasStateAuthority);
+
+        // El dueño usa el target real al instante. Los demás clientes usan la variable sincronizada.
+        Vector3 aimPos = (isMine && objTarget != null) ? objTarget.position : NetworkAimPosition;
 
         /* ---------- HEAD LOOK IK ---------- */
         if (ikActive)
         {
-            animator.SetLookAtWeight(1f, 0.3f, 0.7f, 1f, 0.8f);
+            // Parámetros: (peso global, peso del CUERPO, peso de la cabeza, peso de los ojos, clamp)
+            // ¡Poniendo el peso del cuerpo a 0f evitamos que gire todo el modelo!
+            animator.SetLookAtWeight(1f, 0f, 0.7f, 1f, 0.8f);
             animator.SetLookAtPosition(aimPos);
         }
         else
@@ -118,6 +130,9 @@ public class ManualBoneIK : MonoBehaviourPun, IPunObservable
         Quaternion clampedLocalRot = Quaternion.Euler(euler);
         Quaternion finalWorldRot = bone.parent.rotation * clampedLocalRot;
 
+        // Nota: Al usar Time.deltaTime dentro de OnAnimatorIK (que corre en el Update de Unity),
+        // la suavidad del "proxy" (los otros jugadores) dependerá de su framerate local, 
+        // lo cual está bien para la rotación de los huesos visuales.
         bone.rotation = Quaternion.Slerp(
             bone.rotation,
             finalWorldRot,
@@ -129,19 +144,5 @@ public class ManualBoneIK : MonoBehaviourPun, IPunObservable
     {
         if (angle > 180f) angle -= 360f;
         return angle;
-    }
-
-    /* ---------- PHOTON SYNC ---------- */
-
-    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
-    {
-        if (stream.IsWriting)
-        {
-            stream.SendNext(networkAimPosition);
-        }
-        else
-        {
-            networkAimPosition = (Vector3)stream.ReceiveNext();
-        }
     }
 }
