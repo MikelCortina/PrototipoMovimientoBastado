@@ -1,5 +1,5 @@
 using UnityEngine;
-using Fusion; // <-- Cambiado de Photon.Pun a Fusion
+using Fusion;
 
 public class FusionProjectile : MonoBehaviour
 {
@@ -11,7 +11,7 @@ public class FusionProjectile : MonoBehaviour
 
     [HideInInspector] public bool isLocal;
     private Transform _muzzleAnchor;
-    private NetworkObject _sourcePlayer; // <-- Guardamos quién disparó
+    private NetworkObject _sourcePlayer;
     private bool _isAttached = true;
     private float _distanceTraveled = 0f;
     public float detachDistance = 3.0f;
@@ -19,7 +19,6 @@ public class FusionProjectile : MonoBehaviour
     private Vector3 _visualTailPos;
     private const float SUB_STEP_TIME = 0.01f;
 
-    // AÑADIMOS el NetworkObject "source" al Initialize
     public void Initialize(Vector3 direction, float speed, float gravity, float dmg, Transform muzzle, float lag, NetworkObject source)
     {
         lr = GetComponent<LineRenderer>();
@@ -93,7 +92,6 @@ public class FusionProjectile : MonoBehaviour
     {
         if (isLocal)
         {
-            // Reemplazamos PhotonView por NetworkObject
             NetworkObject hitNO = hit.collider.GetComponentInParent<NetworkObject>();
 
             // Si golpeamos nuestro propio cuerpo, lo ignoramos
@@ -103,18 +101,19 @@ public class FusionProjectile : MonoBehaviour
                 return;
             }
 
-            IDamageable target = hit.collider.GetComponent<IDamageable>();
+            // CORRECCIÓN: Buscamos la nueva interfaz (usamos InParent por si la bala da en un brazo/pierna)
+            IFusionDamageable target = hit.collider.GetComponentInParent<IFusionDamageable>();
 
             if (target != null)
             {
-                // Asumo que tu struct DamageData no cambia
-                DamageData data = new DamageData
+                // CORRECCIÓN: Usamos el nuevo struct
+                FusionDamageData data = new FusionDamageData
                 {
                     amount = this.damage,
                     hitPoint = hit.point,
                     hitNormal = hit.normal,
-                    type = DamageType.Bullet,
-                    instigator = null // Podrías pasar el _sourcePlayer si lo necesitas
+                    type = FusionDamageType.Bullet, // CORRECCIÓN: Usamos el nuevo enum
+                    instigator = _sourcePlayer      // CORRECCIÓN: Asignamos el jugador que disparó
                 };
                 target.TakeDamage(data);
             }
