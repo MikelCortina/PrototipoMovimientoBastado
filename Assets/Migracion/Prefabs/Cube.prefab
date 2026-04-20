@@ -65,7 +65,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -362.9281, y: 211.73022}
+  m_AnchoredPosition: {x: 515, y: 291}
   m_SizeDelta: {x: 226.1439, y: 38.5396}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &5073130960211206032
@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 5206498365728043268}
   - component: {fileID: 165245795914941989}
   - component: {fileID: 658966824143876843}
+  - component: {fileID: -5573404879610420783}
   m_Layer: 0
   m_Name: Cube
   m_TagString: Untagged
@@ -306,6 +307,7 @@ MonoBehaviour:
   - {fileID: 5206498365728043268}
   - {fileID: 165245795914941989}
   - {fileID: 658966824143876843}
+  - {fileID: -5573404879610420783}
   - {fileID: 4463370919284710300}
   ForceRemoteRenderTimeframe: 0
 --- !u!114 &7044902152591979330
@@ -605,6 +607,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHealth: 100
   _currentHealth: 100
+  _isDead:
+    _value: 0
   playerCanvas: {fileID: 4025344996639200902}
   healthBarFill: {fileID: 3790806099215383593}
   audioSource: {fileID: 2053838782976362237}
@@ -651,6 +655,25 @@ MonoBehaviour:
   StateHashes: 00000000a1f7ab0dbb6691e728a981077af3fe2e3cc3dc0c99873bb3cbeb820b6eaf65b44a6264fb69d2675d0fc7b3503c7496678a18fce4b9abd9d34c653702c5f065946b01e16f7a6813fb
   TriggerHashes: 000000003e725c3b28a981072b1a167c
   TotalWords: 5
+--- !u!114 &-5573404879610420783
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7808025757778182215}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ec5f03f56abb2f4e9929b08143cb540, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _playerName:
+    _length: 0
+    _data:
+      Data: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  _kills: 0
+  _deaths: 0
+  _score: 0
 --- !u!1 &7936660578041109596
 GameObject:
   m_ObjectHideFlags: 0
@@ -685,7 +708,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -362.93, y: 211.73}
+  m_AnchoredPosition: {x: 514.9981, y: 290.99976}
   m_SizeDelta: {x: 226.14, y: 38.54}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &1636678158794409707

@@ -11,27 +11,22 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     private NetworkRunner _runner;
 
     [Header("Configuración")]
-    [SerializeField] private NetworkObject _playerPrefab; // Arrastra aquí tu prefab 'FusionPlayer'
+    [SerializeField] private NetworkObject _playerPrefab;
+    [SerializeField] private GameObject menuPanel;
 
-    // Botón para la UI o lo puedes llamar en el Start para pruebas
-    private void OnGUI()
+    private void OnGUI()
     {
         if (_runner == null)
         {
-            if (GUI.Button(new Rect(10, 10, 200, 40), "Host (Crear Partida)"))
+            if (GUI.Button(new Rect(10, 10, 220, 40), "Shared (Crear / Unirse)"))
             {
-                StartGame(GameMode.Host);
-            }
-            if (GUI.Button(new Rect(10, 60, 200, 40), "Join (Unirse)"))
-            {
-                StartGame(GameMode.Client);
+                StartGame(GameMode.Shared);
             }
         }
     }
 
     async void StartGame(GameMode mode)
     {
-        // 1. Check if we already have a runner on this object to avoid the "already added" error
         if (_runner == null)
         {
             _runner = GetComponent<NetworkRunner>();
@@ -41,12 +36,11 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
             }
         }
 
+        _runner.AddCallbacks(this);
         _runner.ProvideInput = true;
 
-        // 2. Scene reference for Fusion 2
         var sceneRef = SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex);
 
-        // 3. Start the game
         try
         {
             await _runner.StartGame(new StartGameArgs()
@@ -56,6 +50,9 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
                 Scene = sceneRef,
                 SceneManager = gameObject.GetOrAddComponent<NetworkSceneManagerDefault>()
             });
+
+            if (menuPanel != null)
+                menuPanel.SetActive(false);
         }
         catch (Exception e)
         {
@@ -63,40 +60,82 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         }
     }
 
-    // --- CALLBACK: Se ejecuta cuando un jugador entra ---
-    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        // Solo el Host/Servidor tiene permiso para Spawnear objetos
-        if (runner.IsServer)
+        Debug.Log($"Jugador {player} se ha unido.");
+
+        if (player == runner.LocalPlayer)
         {
-            Debug.Log($"Jugador {player} se ha unido. Spawneando cubo...");
+            Vector3 spawnPosition = Vector3.zero;
+            Quaternion spawnRotation = Quaternion.identity;
 
-            // Spawneamos en una posición aleatoria para que no se pisen
-            Vector3 spawnPosition = new Vector3(UnityEngine.Random.Range(-2, 2), 2, UnityEngine.Random.Range(-2, 2));
+            if (FusionRespawnManager.Instance != null)
+            {
+                Transform spawnPoint = FusionRespawnManager.Instance.GetRandomSpawnPoint();
+                if (spawnPoint != null)
+                {
+                    spawnPosition = spawnPoint.position;
+                    spawnRotation = spawnPoint.rotation;
+                }
+            }
 
-            runner.Spawn(_playerPrefab, spawnPosition, Quaternion.identity, player);
+            NetworkObject playerObject = runner.Spawn(_playerPrefab, spawnPosition, spawnRotation, player);
+            Debug.Log($"Spawn de jugador local realizado para {player}");
+
+            FusionPlayerState playerState = playerObject.GetComponent<FusionPlayerState>();
+            if (playerState == null)
+                playerState = playerObject.GetComponentInParent<FusionPlayerState>();
+
+            if (playerState != null)
+            {
+                string localName = "Player";
+
+                if (FusionPlayerNameStore.Instance != null)
+                    localName = FusionPlayerNameStore.Instance.CurrentPlayerName;
+
+                playerState.RPC_SetPlayerName(localName);
+            }
         }
+
+        UpdateConnectedPlayers(runner);
     }
 
-    // --- Métodos obligatorios de la interfaz (Vacíos) ---
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    {
+        UpdateConnectedPlayers(runner);
+    }
+
+    private void UpdateConnectedPlayers(NetworkRunner runner)
+    {
+        if (FusionGameState.Instance == null)
+            return;
+
+        if (!FusionGameState.Instance.HasStateAuthority)
+            return;
+
+        int count = 0;
+        foreach (var p in runner.ActivePlayers)
+        {
+            count++;
+        }
+
+        FusionGameState.Instance.SetConnectedPlayers(count);
+    }
+
     public void OnInput(NetworkRunner runner, NetworkInput input)
     {
-        // Busca TODOS los handlers en la escena
         var handlers = FindObjectsByType<LocalInputHandler>(FindObjectsSortMode.None);
 
         foreach (var handler in handlers)
         {
-            // Solo extraemos el input si:
-            // 1. El objeto es válido.
-            // 2. Pertenece a este Runner (vital si pruebas 2 jugadores en el mismo Unity).
-            // 3. Nosotros somos los dueños (InputAuthority).
             if (handler.Object != null && handler.Object.Runner == runner && handler.HasInputAuthority)
             {
                 input.Set(handler.GetNetworkInput());
-                break; // Ya encontramos el nuestro, dejamos de buscar
+                break;
             }
         }
     }
+
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
     public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
     public void OnConnectedToServer(NetworkRunner runner) { }
@@ -112,15 +151,6 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     public void OnSceneLoadStart(NetworkRunner runner) { }
     public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
-    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
-
-    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress)
-    {
-        throw new NotImplementedException();
-    }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
 }
