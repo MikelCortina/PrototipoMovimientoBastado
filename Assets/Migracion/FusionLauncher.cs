@@ -13,27 +13,53 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     [Header("Configuración")]
     [SerializeField] private NetworkObject _playerPrefab;
     [SerializeField] private GameObject menuPanel;
+    [SerializeField] private FusionMenuRoomInput roomInput;
 
-    private void OnGUI()
+    private bool _isStartingGame = false;
+
+    public async void CreateRoom()
     {
-        if (_runner == null)
-        {
-            if (GUI.Button(new Rect(10, 10, 220, 40), "Shared (Crear / Unirse)"))
-            {
-                StartGame(GameMode.Shared);
-            }
-        }
+        string roomName = "Sala_1";
+
+        if (roomInput != null)
+            roomName = roomInput.GetRoomName();
+
+        await StartGame(GameMode.Shared, roomName);
     }
 
-    async void StartGame(GameMode mode)
+    public async void QuickJoinRoom()
     {
+        string roomName = "Sala_1";
+
+        if (roomInput != null)
+            roomName = roomInput.GetRoomName();
+
+        await StartGame(GameMode.Shared, roomName);
+    }
+
+    public void ExitGame()
+    {
+        Debug.Log("Saliendo del juego...");
+
+        Application.Quit();
+
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#endif
+    }
+
+    private async System.Threading.Tasks.Task StartGame(GameMode mode, string sessionName)
+    {
+        if (_isStartingGame)
+            return;
+
+        _isStartingGame = true;
+
         if (_runner == null)
         {
             _runner = GetComponent<NetworkRunner>();
             if (_runner == null)
-            {
                 _runner = gameObject.AddComponent<NetworkRunner>();
-            }
         }
 
         _runner.AddCallbacks(this);
@@ -46,17 +72,23 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
             await _runner.StartGame(new StartGameArgs()
             {
                 GameMode = mode,
-                SessionName = "TestRoom",
+                SessionName = sessionName,
                 Scene = sceneRef,
                 SceneManager = gameObject.GetOrAddComponent<NetworkSceneManagerDefault>()
             });
 
             if (menuPanel != null)
                 menuPanel.SetActive(false);
+
+            Debug.Log($"Partida iniciada en la sala: {sessionName}");
         }
         catch (Exception e)
         {
             Debug.LogError($"Fusion failed to start: {e.Message}");
+        }
+        finally
+        {
+            _isStartingGame = false;
         }
     }
 
@@ -115,9 +147,7 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
         int count = 0;
         foreach (var p in runner.ActivePlayers)
-        {
             count++;
-        }
 
         FusionGameState.Instance.SetConnectedPlayers(count);
     }
