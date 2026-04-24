@@ -11,6 +11,15 @@ public enum MatchState
 public class FusionGameState : NetworkBehaviour
 {
 
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    public void RPC_ShowKillFeed(string killerName, string victimName, int cause)
+    {
+        if (FusionKillFeedUI.Instance == null)
+            return;
+
+        FusionKillFeedUI.Instance.ShowKill(killerName, victimName, (FusionKillCause)cause);
+    }
+
     [Header("Killstreaks - Torreta")]
     [SerializeField] private NetworkObject turretPrefab;
     [SerializeField] private float turretSpawnDistance = 3f;
@@ -414,7 +423,7 @@ public class FusionGameState : NetworkBehaviour
     }
 
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-    public void RPC_ReportElimination(NetworkId killerId, NetworkId victimId)
+    public void RPC_ReportElimination(NetworkId killerId, NetworkId victimId, int cause)
     {
         if (!HasStateAuthority)
             return;
@@ -439,6 +448,27 @@ public class FusionGameState : NetworkBehaviour
             victimState.AddDeath();
         else
             victimState.RPC_AddDeath();
+        string victimName = victimState.playerName.ToString();
+        if (string.IsNullOrWhiteSpace(victimName))
+            victimName = victimObject.name;
+
+        string killerName = "Entorno";
+
+        if (killerObject != null)
+        {
+            FusionPlayerState killerFeedState = killerObject.GetComponent<FusionPlayerState>();
+            if (killerFeedState == null)
+                killerFeedState = killerObject.GetComponentInParent<FusionPlayerState>();
+
+            if (killerFeedState != null)
+            {
+                killerName = killerFeedState.playerName.ToString();
+                if (string.IsNullOrWhiteSpace(killerName))
+                    killerName = killerObject.name;
+            }
+        }
+
+        RPC_ShowKillFeed(killerName, victimName, cause);
 
         if (killerObject != null && killerObject != victimObject)
         {
@@ -504,7 +534,7 @@ public class FusionGameState : NetworkBehaviour
         );
     }
 
-    public void ReportElimination(NetworkObject killerObject, NetworkObject victimObject)
+    public void ReportElimination(NetworkObject killerObject, NetworkObject victimObject, FusionKillCause cause)
     {
         if (victimObject == null)
             return;
@@ -513,7 +543,7 @@ public class FusionGameState : NetworkBehaviour
         if (killerObject != null)
             killerId = killerObject.Id;
 
-        RPC_ReportElimination(killerId, victimObject.Id);
+        RPC_ReportElimination(killerId, victimObject.Id, (int)cause);
     }
 
     private void OnDestroy()

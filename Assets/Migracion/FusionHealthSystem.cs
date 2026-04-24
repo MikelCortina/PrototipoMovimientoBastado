@@ -7,6 +7,10 @@ using UnityEngine.UI;
 
 public class FusionHealthSystem : NetworkBehaviour, IFusionDamageable
 {
+
+    private NetworkObject _lastDamageInstigator;
+    private FusionDamageType _lastDamageType = FusionDamageType.Bullet;
+
     [Header("Stats")]
     public float maxHealth = 100f;
     [Networked] public float currentHealth { get; set; }
@@ -167,6 +171,10 @@ public class FusionHealthSystem : NetworkBehaviour, IFusionDamageable
 
         RPC_PlayDamageEffects(data.amount, data.hitPoint);
 
+
+        _lastDamageInstigator = data.instigator;
+        _lastDamageType = data.type;
+
         if (currentHealth <= 0f)
         {
             currentHealth = 0f;
@@ -184,16 +192,33 @@ public class FusionHealthSystem : NetworkBehaviour, IFusionDamageable
         OnDamageReceived?.Invoke(amount, hitPoint, false);
     }
 
+    private FusionKillCause ConvertDamageTypeToKillCause(FusionDamageType damageType)
+    {
+        switch (damageType)
+        {
+            case FusionDamageType.Bullet:
+                return FusionKillCause.Bullet;
+
+            case FusionDamageType.Explosion:
+                return FusionKillCause.Grenade;
+
+            default:
+                return FusionKillCause.Bullet;
+        }
+    }
+
     private void Die(NetworkObject killer)
     {
         if (!HasStateAuthority)
             return;
 
-        Debug.Log($"Jugador muerto. Killer: {(killer != null ? killer.name : "desconocido")}");
+        FusionKillCause cause = ConvertDamageTypeToKillCause(_lastDamageType);
+
+        Debug.Log($"Jugador muerto. Killer: {(killer != null ? killer.name : "desconocido")} | Cause: {cause}");
 
         if (FusionGameState.Instance != null)
         {
-            FusionGameState.Instance.ReportElimination(killer, Object);
+            FusionGameState.Instance.ReportElimination(killer, Object, cause);
             FusionGameState.Instance.RequestRespawn(Object);
         }
     }
