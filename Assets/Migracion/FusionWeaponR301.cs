@@ -28,15 +28,20 @@ public class FusionWeaponR301 : NetworkBehaviour
     public Vector3 shotgunRecoilKickback = new Vector3(0f, 0f, -0.2f);
     public Vector3 shotgunRecoilRotation = new Vector3(-3f, 0f, 0f);
 
+    [Header("Main Weapon Mode")]
+    public bool isUsingShotgunModeAsMainWeapon = false;
+    public int mainWeaponPellets = 8;
+    public float mainWeaponSpreadDegrees = 6f;
+    public float mainWeaponDamageMultiplier = 0.6f;
+
     [Header("Referencias")]
     public Camera mainCamera;
     public Transform muzzlePoint;
     public GameObject bulletPrefab;
-    public FusionRecoil recoil; // <-- CAMBIADO A FusionRecoil
+    public FusionRecoil recoil;
 
     private PlayerAnimations playerAnimations;
 
-    // --- VARIABLES SINCRONIZADAS ---
     [Networked] private TickTimer nextFireTimer { get; set; }
     [Networked] private TickTimer nextShotgunTimer { get; set; }
     [Networked] private float currentBloomDegrees { get; set; }
@@ -57,26 +62,40 @@ public class FusionWeaponR301 : NetworkBehaviour
 
     public override void FixedUpdateNetwork()
     {
+        if (FusionGameState.Instance != null &&
+            FusionGameState.Instance.currentMatchState == MatchState.Finished)
+        {
+            if (isShootingHeld)
+            {
+                isShootingHeld = false;
+
+                if (Runner.IsForward && playerAnimations != null)
+                    playerAnimations.SetShooting(false);
+            }
+
+            return;
+        }
+
         if (GetInput(out NetworkInputData input))
         {
             var pressed = input.buttons.GetPressed(buttonsPrevious);
             var released = input.buttons.GetReleased(buttonsPrevious);
             bool fire1Held = input.buttons.IsSet(NetworkInputData.BUTTON_FIRE1);
 
-            // --- ESTADOS DE ANIMACIÓN ---
             if (pressed.IsSet(NetworkInputData.BUTTON_FIRE1))
             {
                 isShootingHeld = true;
-                if (Runner.IsForward && playerAnimations != null) playerAnimations.SetShooting(true);
+                if (Runner.IsForward && playerAnimations != null)
+                    playerAnimations.SetShooting(true);
             }
 
             if (released.IsSet(NetworkInputData.BUTTON_FIRE1))
             {
                 isShootingHeld = false;
-                if (Runner.IsForward && playerAnimations != null) playerAnimations.SetShooting(false);
+                if (Runner.IsForward && playerAnimations != null)
+                    playerAnimations.SetShooting(false);
             }
 
-            // --- DISPARO NORMAL ---
             if (fire1Held && nextFireTimer.ExpiredOrNotRunning(Runner))
             {
                 nextFireTimer = TickTimer.CreateFromSeconds(Runner, fireRate);
@@ -84,30 +103,46 @@ public class FusionWeaponR301 : NetworkBehaviour
                 int seed = Runner.Tick;
                 Vector3 targetPoint = GetCameraTargetPoint();
 
-                FireSingleLocal(seed, currentBloomDegrees, targetPoint);
-                RPC_PlayShootEffects(false);
-                if (Runner.IsForward && HasInputAuthority && shootAudioSource) shootAudioSource.PlayOneShot(shootClip);
+                if (isUsingShotgunModeAsMainWeapon)
+                {
+                    FireShotgunAsMainWeapon(seed, targetPoint);
+                }
+                else
+                {
+                    FireSingleLocal(seed, currentBloomDegrees, targetPoint);
+                    currentBloomDegrees = Mathf.Clamp(currentBloomDegrees + bloomPerShot, 0f, maxSpreadDegrees);
+                }
 
-                currentBloomDegrees = Mathf.Clamp(currentBloomDegrees + bloomPerShot, 0f, maxSpreadDegrees);
+                RPC_PlayShootEffects(isUsingShotgunModeAsMainWeapon);
+
+                if (Runner.IsForward && HasInputAuthority && shootAudioSource)
+                    shootAudioSource.PlayOneShot(shootClip);
 
                 if (Runner.IsForward && HasInputAuthority && recoil != null)
-                    recoil.ApplyRecoil(recoilKickback, recoilRotation);
+                {
+                    if (isUsingShotgunModeAsMainWeapon)
+                        recoil.ApplyRecoil(shotgunRecoilKickback, shotgunRecoilRotation);
+                    else
+                        recoil.ApplyRecoil(recoilKickback, recoilRotation);
+                }
             }
             else
             {
                 currentBloomDegrees = Mathf.MoveTowards(currentBloomDegrees, 0f, recoverRate * Runner.DeltaTime);
             }
 
-            // --- DISPARO ESCOPETA ---
             if (pressed.IsSet(NetworkInputData.BUTTON_FIRE2) && nextShotgunTimer.ExpiredOrNotRunning(Runner))
             {
                 nextShotgunTimer = TickTimer.CreateFromSeconds(Runner, shotgunFireRate);
+
                 int seed = Runner.Tick;
                 Vector3 targetPoint = GetCameraTargetPoint();
 
                 FireShotgunLocal(seed, targetPoint);
                 RPC_PlayShootEffects(true);
-                if (Runner.IsForward && HasInputAuthority && shootAudioSource) shootAudioSource.PlayOneShot(shootClip);
+
+                if (Runner.IsForward && HasInputAuthority && shootAudioSource)
+                    shootAudioSource.PlayOneShot(shootClip);
 
                 if (Runner.IsForward && HasInputAuthority && recoil != null)
                     recoil.ApplyRecoil(shotgunRecoilKickback, shotgunRecoilRotation);
@@ -117,7 +152,6 @@ public class FusionWeaponR301 : NetworkBehaviour
         }
     }
 
-    // --- LÓGICA LOCAL DE DISPARO ---
     private void FireSingleLocal(int seed, float currentBloom, Vector3 target)
     {
         Random.State oldState = Random.state;
@@ -149,13 +183,33 @@ public class FusionWeaponR301 : NetworkBehaviour
             Quaternion spreadRotation = Quaternion.Euler(randomCircle.x, randomCircle.y, 0);
             Vector3 pelletDirection = Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
 
-            SpawnShotgunPellet(origin, pelletDirection, 0f);
+            SpawnShotgunPellet(origin, pelletDirection, 0f, damage * shotgunDamageMultiplier);
         }
 
         Random.state = oldState;
     }
 
-    // --- RPCs PARA EFECTOS VISUALES Y SONIDO ---
+    private void FireShotgunAsMainWeapon(int seed, Vector3 target)
+    {
+        Random.State oldState = Random.state;
+        Random.InitState(seed);
+
+        Vector3 origin = muzzlePoint.position;
+        Vector3 baseDirection = (target - origin).normalized;
+        int pelletsToUse = Mathf.Max(1, mainWeaponPellets);
+
+        for (int i = 0; i < pelletsToUse; i++)
+        {
+            Vector2 randomCircle = Random.insideUnitCircle * mainWeaponSpreadDegrees;
+            Quaternion spreadRotation = Quaternion.Euler(randomCircle.x, randomCircle.y, 0);
+            Vector3 pelletDirection = Quaternion.LookRotation(baseDirection) * spreadRotation * Vector3.forward;
+
+            SpawnShotgunPellet(origin, pelletDirection, 0f, damage * mainWeaponDamageMultiplier);
+        }
+
+        Random.state = oldState;
+    }
+
     [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.Proxies)]
     private void RPC_PlayShootEffects(bool isShotgun)
     {
@@ -163,10 +217,8 @@ public class FusionWeaponR301 : NetworkBehaviour
             shootAudioSource.PlayOneShot(shootClip);
     }
 
-    // --- MÉTODOS DE SPAWN ---
     private void SpawnBullet(Vector3 origin, Vector3 direction, float dmg, float lag)
     {
-        // <-- CAMBIADO A FusionBulletPool
         GameObject bulletGO = FusionBulletPool.Instance.GetBullet();
 
         if (bulletGO != null)
@@ -175,21 +227,18 @@ public class FusionWeaponR301 : NetworkBehaviour
             bulletGO.transform.rotation = Quaternion.LookRotation(direction);
             bulletGO.SetActive(true);
 
-            // <-- CAMBIADO A FusionProjectile
             FusionProjectile proj = bulletGO.GetComponent<FusionProjectile>();
             if (proj != null)
             {
                 proj.ResetProjectile();
                 proj.isLocal = HasInputAuthority;
-                // <-- AÑADIDO 'Object' AL FINAL PARA QUE EL PROYECTIL SEPA QUIÉN LO DISPARÓ
                 proj.Initialize(direction, bulletSpeed, bulletGravity, dmg, muzzlePoint, lag, Object);
             }
         }
     }
 
-    private void SpawnShotgunPellet(Vector3 origin, Vector3 direction, float lag)
+    private void SpawnShotgunPellet(Vector3 origin, Vector3 direction, float lag, float pelletDamage)
     {
-        // <-- CAMBIADO A FusionBulletPool
         GameObject bulletGO = FusionBulletPool.Instance.GetBullet();
 
         if (bulletGO != null)
@@ -198,21 +247,21 @@ public class FusionWeaponR301 : NetworkBehaviour
             bulletGO.transform.rotation = Quaternion.LookRotation(direction);
             bulletGO.SetActive(true);
 
-            // <-- CAMBIADO A FusionProjectile
             FusionProjectile proj = bulletGO.GetComponent<FusionProjectile>();
             if (proj != null)
             {
                 proj.ResetProjectile();
                 proj.isLocal = HasInputAuthority;
-                // <-- AÑADIDO 'Object' AL FINAL
-                proj.Initialize(direction, shotgunBulletSpeed, bulletGravity, damage * shotgunDamageMultiplier, muzzlePoint, lag, Object);
+                proj.Initialize(direction, shotgunBulletSpeed, bulletGravity, pelletDamage, muzzlePoint, lag, Object);
             }
         }
     }
 
     private Vector3 GetCameraTargetPoint()
     {
-        if (mainCamera == null) return transform.position + transform.forward * 1000f;
+        if (mainCamera == null)
+            return transform.position + transform.forward * 1000f;
+
         Ray ray = mainCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
         return Physics.Raycast(ray, out RaycastHit hit, 1000f) ? hit.point : ray.GetPoint(1000f);
     }

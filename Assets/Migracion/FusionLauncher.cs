@@ -9,15 +9,15 @@ using UnityEngine.SceneManagement;
 public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
 {
     private NetworkRunner _runner;
+    private bool _isStartingGame = false;
+    private bool _callbacksRegistered = false;
 
     [Header("Configuración")]
     [SerializeField] private NetworkObject _playerPrefab;
-    [SerializeField] private GameObject menuPanel;
+    [SerializeField] private GameObject menuCanvasRoot;
+    [SerializeField] private GameObject endMatchCanvasRoot;
     [SerializeField] private FusionMenuRoomInput roomInput;
     [SerializeField] private FusionRoomListUI roomListUI;
-
-    private bool _isStartingGame = false;
-    private bool _isInLobby = false;
 
     public async void ConnectToLobby()
     {
@@ -28,13 +28,12 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
                 _runner = gameObject.AddComponent<NetworkRunner>();
         }
 
-        _runner.AddCallbacks(this);
+        RegisterRunnerCallbacks();
         _runner.ProvideInput = true;
 
         try
         {
             await _runner.JoinSessionLobby(SessionLobby.Shared);
-            _isInLobby = true;
             Debug.Log("Conectado al lobby de sesiones.");
         }
         catch (Exception e)
@@ -45,21 +44,13 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
     public async void CreateRoom()
     {
-        string roomName = "Sala_1";
-
-        if (roomInput != null)
-            roomName = roomInput.GetRoomName();
-
+        string roomName = roomInput != null ? roomInput.GetRoomName() : "Sala_1";
         await StartGame(GameMode.Shared, roomName);
     }
 
     public async void QuickJoinRoom()
     {
-        string roomName = "Sala_1";
-
-        if (roomInput != null)
-            roomName = roomInput.GetRoomName();
-
+        string roomName = roomInput != null ? roomInput.GetRoomName() : "Sala_1";
         await StartGame(GameMode.Shared, roomName);
     }
 
@@ -71,31 +62,43 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         await StartGame(GameMode.Shared, sessionName);
     }
 
-    public async void LeaveRoom()
+    public async void ReturnToMenu()
     {
-        if (_runner == null)
-            return;
+        Debug.Log("ReturnToMenu pulsado");
 
-        try
+        if (endMatchCanvasRoot != null)
+            endMatchCanvasRoot.SetActive(false);
+
+        if (menuCanvasRoot != null)
+            menuCanvasRoot.SetActive(true);
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        FusionEndMatchUI endUI = FindFirstObjectByType<FusionEndMatchUI>();
+        if (endUI != null)
+            endUI.ForceHidePanel();
+
+        if (_runner != null)
         {
-            await _runner.Shutdown();
+            try
+            {
+                await _runner.Shutdown();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error al cerrar la partida: {e.Message}");
+            }
+
             _runner = null;
-            _isInLobby = false;
-
-            if (menuPanel != null)
-                menuPanel.SetActive(true);
-
-            Debug.Log("Has salido de la sala.");
+            _callbacksRegistered = false;
         }
-        catch (Exception e)
-        {
-            Debug.LogError($"Error al salir de la sala: {e.Message}");
-        }
+
+        Debug.Log("Vuelta al menú completada");
     }
 
     public void ExitGame()
     {
-        Debug.Log("Saliendo del juego...");
         Application.Quit();
 
 #if UNITY_EDITOR
@@ -115,10 +118,10 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
             _runner = GetComponent<NetworkRunner>();
             if (_runner == null)
                 _runner = gameObject.AddComponent<NetworkRunner>();
-
-            _runner.AddCallbacks(this);
-            _runner.ProvideInput = true;
         }
+
+        RegisterRunnerCallbacks();
+        _runner.ProvideInput = true;
 
         var sceneRef = SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex);
 
@@ -132,10 +135,14 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
                 SceneManager = gameObject.GetOrAddComponent<NetworkSceneManagerDefault>()
             });
 
-            _isInLobby = false;
+            if (menuCanvasRoot != null)
+                menuCanvasRoot.SetActive(false);
 
-            if (menuPanel != null)
-                menuPanel.SetActive(false);
+            if (endMatchCanvasRoot != null)
+                endMatchCanvasRoot.SetActive(true);
+
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
 
             Debug.Log($"Partida iniciada en la sala: {sessionName}");
         }
@@ -149,10 +156,17 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         }
     }
 
+    private void RegisterRunnerCallbacks()
+    {
+        if (_runner == null || _callbacksRegistered)
+            return;
+
+        _runner.AddCallbacks(this);
+        _callbacksRegistered = true;
+    }
+
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        Debug.Log($"Jugador {player} se ha unido.");
-
         if (player == runner.LocalPlayer)
         {
             Vector3 spawnPosition = Vector3.zero;
@@ -169,7 +183,6 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
             }
 
             NetworkObject playerObject = runner.Spawn(_playerPrefab, spawnPosition, spawnRotation, player);
-            Debug.Log($"Spawn de jugador local realizado para {player}");
 
             FusionPlayerState playerState = playerObject.GetComponent<FusionPlayerState>();
             if (playerState == null)
@@ -177,16 +190,23 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
             if (playerState != null)
             {
-                string localName = "Player";
-
-                if (FusionPlayerNameStore.Instance != null)
-                    localName = FusionPlayerNameStore.Instance.CurrentPlayerName;
+                string localName = FusionPlayerNameStore.Instance != null
+                    ? FusionPlayerNameStore.Instance.CurrentPlayerName
+                    : "Player";
 
                 playerState.RPC_SetPlayerName(localName);
             }
         }
 
         UpdateConnectedPlayers(runner);
+
+        if (FusionGameState.Instance != null &&
+            FusionGameState.Instance.HasStateAuthority &&
+            FusionGameState.Instance.connectedPlayers >= 2 &&
+            FusionGameState.Instance.currentMatchState == MatchState.Waiting)
+        {
+            FusionGameState.Instance.StartMatch();
+        }
     }
 
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
@@ -211,8 +231,6 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
 
     public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
     {
-        Debug.Log($"Salas disponibles: {sessionList.Count}");
-
         if (roomListUI != null)
             roomListUI.RefreshRooms(sessionList, this);
     }
@@ -231,7 +249,6 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         }
     }
 
-    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
     public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
     public void OnConnectedToServer(NetworkRunner runner) { }
     public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { }
@@ -247,4 +264,5 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
     public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
 }

@@ -25,8 +25,14 @@ public class FusionCameraHandler : NetworkBehaviour
 
     void Update()
     {
-        // SEGURIDAD: Si esta no es mi pantalla, no leo el hardware del ratón
-        if (!HasInputAuthority) return;
+        if (!HasInputAuthority)
+            return;
+
+        if (FusionGameState.Instance != null &&
+            FusionGameState.Instance.currentMatchState == MatchState.Finished)
+        {
+            return;
+        }
 
         _yaw += Input.GetAxisRaw("Mouse X") * mouseSensitivity;
         _pitch -= Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
@@ -37,5 +43,14 @@ public class FusionCameraHandler : NetworkBehaviour
     public Vector2 GetLookRotation()
     {
         return new Vector2(_yaw, _pitch);
+    }
+
+    public void SetCursorGameplayState(bool gameplayActive)
+    {
+        if (!HasInputAuthority)
+            return;
+
+        Cursor.lockState = gameplayActive ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !gameplayActive;
     }
 }

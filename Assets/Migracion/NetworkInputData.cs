@@ -10,6 +10,10 @@ public struct NetworkInputData : INetworkInput
 
     public const int BUTTON_JUMP = 0;
     public const int BUTTON_DASH = 1;
-    public const int BUTTON_FIRE1 = 2; // Clic Izquierdo (Disparo normal)
-    public const int BUTTON_FIRE2 = 3; // Clic Derecho (Escopeta)
+    public const int BUTTON_FIRE1 = 2;
+    public const int BUTTON_FIRE2 = 3;
+
+    public const int BUTTON_STREAK_GRENADE = 4;   // Z
+    public const int BUTTON_STREAK_AIRSTRIKE = 5; // X
+    public const int BUTTON_STREAK_TURRET = 6;    // C
 }

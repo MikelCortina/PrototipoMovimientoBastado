@@ -8,6 +8,111 @@ public class FusionPlayerState : NetworkBehaviour
     [Networked] public int deaths { get; set; }
     [Networked] public int score { get; set; }
 
+    [Networked] public NetworkBool grenadeRewardGrantedThisStreak { get; set; }
+    [Networked] public NetworkBool airStrikeRewardGrantedThisStreak { get; set; }
+    [Networked] public NetworkBool turretRewardGrantedThisStreak { get; set; }
+
+    [Networked] public int killStreak { get; set; }
+    [Networked] public NetworkBool hasGrenadeStreak { get; set; }
+    [Networked] public NetworkBool hasAirStrikeStreak { get; set; }
+    [Networked] public NetworkBool hasTurretStreak { get; set; }
+
+
+    public void DebugGiveGrenade()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasGrenadeStreak = true;
+        grenadeRewardGrantedThisStreak = true;
+
+        Debug.Log($"DEBUG | {playerName} recibió Granada");
+    }
+
+    public void DebugGiveAirStrike()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasAirStrikeStreak = true;
+        airStrikeRewardGrantedThisStreak = true;
+
+        Debug.Log($"DEBUG | {playerName} recibió Ataque Aéreo");
+    }
+
+    public void DebugGiveTurret()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasTurretStreak = true;
+        turretRewardGrantedThisStreak = true;
+
+        Debug.Log($"DEBUG | {playerName} recibió Torreta");
+    }
+
+    public void DebugAddKillStreakStep()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        AddKill();
+    }
+
+    public void DebugResetStreakOnly()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        ResetKillStreakRewards();
+
+        Debug.Log($"DEBUG | {playerName} reseteó racha");
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_DebugGiveGrenade()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        DebugGiveGrenade();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_DebugGiveAirStrike()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        DebugGiveAirStrike();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_DebugGiveTurret()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        DebugGiveTurret();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_DebugAddKillStreakStep()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        DebugAddKillStreakStep();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_DebugResetStreakOnly()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        DebugResetStreakOnly();
+    }
     public override void Spawned()
     {
         if (HasStateAuthority)
@@ -15,6 +120,15 @@ public class FusionPlayerState : NetworkBehaviour
             kills = 0;
             deaths = 0;
             score = 0;
+
+            killStreak = 0;
+            hasGrenadeStreak = false;
+            hasAirStrikeStreak = false;
+            hasTurretStreak = false;
+
+            grenadeRewardGrantedThisStreak = false;
+            airStrikeRewardGrantedThisStreak = false;
+            turretRewardGrantedThisStreak = false;
         }
     }
 
@@ -46,8 +160,27 @@ public class FusionPlayerState : NetworkBehaviour
 
         kills++;
         score += 100;
+        killStreak++;
 
-        Debug.Log($"AddKill | object: {name} | kills: {kills} | score: {score} | HasStateAuthority: {HasStateAuthority}");
+        if (killStreak >= 3 && !grenadeRewardGrantedThisStreak)
+        {
+            hasGrenadeStreak = true;
+            grenadeRewardGrantedThisStreak = true;
+        }
+
+        if (killStreak >= 5 && !airStrikeRewardGrantedThisStreak)
+        {
+            hasAirStrikeStreak = true;
+            airStrikeRewardGrantedThisStreak = true;
+        }
+
+        if (killStreak >= 10 && !turretRewardGrantedThisStreak)
+        {
+            hasTurretStreak = true;
+            turretRewardGrantedThisStreak = true;
+        }
+
+        Debug.Log($"AddKill | object: {name} | kills: {kills} | score: {score} | streak: {killStreak} | grenade: {hasGrenadeStreak} | air: {hasAirStrikeStreak} | turret: {hasTurretStreak} | HasStateAuthority: {HasStateAuthority}");
     }
 
     public void AddDeath()
@@ -58,7 +191,9 @@ public class FusionPlayerState : NetworkBehaviour
         deaths++;
         score = Mathf.Max(0, score - 50);
 
-        Debug.Log($"AddDeath | object: {name} | deaths: {deaths} | score: {score} | HasStateAuthority: {HasStateAuthority}");
+        ResetKillStreakRewards();
+
+        Debug.Log($"AddDeath | object: {name} | deaths: {deaths} | score: {score} | streak reset | HasStateAuthority: {HasStateAuthority}");
     }
 
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
@@ -79,6 +214,71 @@ public class FusionPlayerState : NetworkBehaviour
         AddDeath();
     }
 
+    public void ConsumeGrenadeStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasGrenadeStreak = false;
+    }
+
+    public void ConsumeAirStrikeStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasAirStrikeStreak = false;
+    }
+
+    public void ConsumeTurretStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        hasTurretStreak = false;
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_ConsumeGrenadeStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        ConsumeGrenadeStreak();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_ConsumeAirStrikeStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        ConsumeAirStrikeStreak();
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_ConsumeTurretStreak()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        ConsumeTurretStreak();
+    }
+
+    public void ResetKillStreakRewards()
+    {
+        if (!HasStateAuthority)
+            return;
+
+        killStreak = 0;
+        hasGrenadeStreak = false;
+        hasAirStrikeStreak = false;
+        hasTurretStreak = false;
+
+        grenadeRewardGrantedThisStreak = false;
+        airStrikeRewardGrantedThisStreak = false;
+        turretRewardGrantedThisStreak = false;
+    }
     public void ResetStats()
     {
         if (!HasStateAuthority)
@@ -87,5 +287,7 @@ public class FusionPlayerState : NetworkBehaviour
         kills = 0;
         deaths = 0;
         score = 0;
+
+        ResetKillStreakRewards();
     }
 }
