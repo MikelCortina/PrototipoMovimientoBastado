@@ -14,8 +14,34 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     [SerializeField] private NetworkObject _playerPrefab;
     [SerializeField] private GameObject menuPanel;
     [SerializeField] private FusionMenuRoomInput roomInput;
+    [SerializeField] private FusionRoomListUI roomListUI;
 
     private bool _isStartingGame = false;
+    private bool _isInLobby = false;
+
+    public async void ConnectToLobby()
+    {
+        if (_runner == null)
+        {
+            _runner = GetComponent<NetworkRunner>();
+            if (_runner == null)
+                _runner = gameObject.AddComponent<NetworkRunner>();
+        }
+
+        _runner.AddCallbacks(this);
+        _runner.ProvideInput = true;
+
+        try
+        {
+            await _runner.JoinSessionLobby(SessionLobby.Shared);
+            _isInLobby = true;
+            Debug.Log("Conectado al lobby de sesiones.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Error al conectar al lobby: {e.Message}");
+        }
+    }
 
     public async void CreateRoom()
     {
@@ -37,10 +63,39 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         await StartGame(GameMode.Shared, roomName);
     }
 
+    public async void JoinSpecificRoom(string sessionName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionName))
+            return;
+
+        await StartGame(GameMode.Shared, sessionName);
+    }
+
+    public async void LeaveRoom()
+    {
+        if (_runner == null)
+            return;
+
+        try
+        {
+            await _runner.Shutdown();
+            _runner = null;
+            _isInLobby = false;
+
+            if (menuPanel != null)
+                menuPanel.SetActive(true);
+
+            Debug.Log("Has salido de la sala.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Error al salir de la sala: {e.Message}");
+        }
+    }
+
     public void ExitGame()
     {
         Debug.Log("Saliendo del juego...");
-
         Application.Quit();
 
 #if UNITY_EDITOR
@@ -60,10 +115,10 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
             _runner = GetComponent<NetworkRunner>();
             if (_runner == null)
                 _runner = gameObject.AddComponent<NetworkRunner>();
-        }
 
-        _runner.AddCallbacks(this);
-        _runner.ProvideInput = true;
+            _runner.AddCallbacks(this);
+            _runner.ProvideInput = true;
+        }
 
         var sceneRef = SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex);
 
@@ -76,6 +131,8 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
                 Scene = sceneRef,
                 SceneManager = gameObject.GetOrAddComponent<NetworkSceneManagerDefault>()
             });
+
+            _isInLobby = false;
 
             if (menuPanel != null)
                 menuPanel.SetActive(false);
@@ -152,6 +209,14 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
         FusionGameState.Instance.SetConnectedPlayers(count);
     }
 
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
+    {
+        Debug.Log($"Salas disponibles: {sessionList.Count}");
+
+        if (roomListUI != null)
+            roomListUI.RefreshRooms(sessionList, this);
+    }
+
     public void OnInput(NetworkRunner runner, NetworkInput input)
     {
         var handlers = FindObjectsByType<LocalInputHandler>(FindObjectsSortMode.None);
@@ -173,7 +238,6 @@ public class FusionLauncher : MonoBehaviour, INetworkRunnerCallbacks
     public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
     public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
     public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
-    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
     public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
     public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
     public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ArraySegment<byte> data) { }
