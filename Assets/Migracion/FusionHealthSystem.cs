@@ -199,14 +199,19 @@ public class FusionHealthSystem : NetworkBehaviour, IFusionDamageable
             case FusionDamageType.Bullet:
                 return FusionKillCause.Bullet;
 
-            case FusionDamageType.Explosion:
+            case FusionDamageType.Grenade:
                 return FusionKillCause.Grenade;
+
+            case FusionDamageType.AirStrike:
+                return FusionKillCause.AirStrike;
+
+            case FusionDamageType.Turret:
+                return FusionKillCause.Turret;
 
             default:
                 return FusionKillCause.Bullet;
         }
     }
-
     private void Die(NetworkObject killer)
     {
         if (!HasStateAuthority)

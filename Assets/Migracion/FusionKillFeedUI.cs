@@ -16,7 +16,27 @@ public class FusionKillFeedUI : MonoBehaviour
         if (Instance == null)
             Instance = this;
         else
+        {
             Destroy(gameObject);
+            return;
+        }
+
+        if (killFeedText == null)
+        {
+            GameObject textObject = GameObject.Find("KillFeedText");
+            if (textObject != null)
+                killFeedText = textObject.GetComponent<TMP_Text>();
+        }
+
+        if (killFeedText == null)
+        {
+            killFeedText = FindFirstObjectByType<TMP_Text>(FindObjectsInactive.Include);
+        }
+
+        if (killFeedText != null)
+            killFeedText.gameObject.SetActive(false);
+        else
+            Debug.LogWarning("FusionKillFeedUI no encontró ningún TMP_Text para el kill feed.");
     }
 
     public void ShowKill(string killerName, string victimName, FusionKillCause cause)

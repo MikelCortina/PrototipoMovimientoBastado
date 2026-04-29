@@ -11,6 +11,10 @@ public class FusionTurret : NetworkBehaviour
     public float rotationSpeed = 8f;
     public LayerMask targetMask = ~0;
 
+    [Header("Visual Feedback")]
+    public LineRenderer tracerLine;
+    public float tracerDuration = 0.05f;
+    public Transform firePoint;
     [Networked] private TickTimer lifeTimer { get; set; }
     [Networked] private TickTimer fireTimer { get; set; }
     [Networked] public NetworkId ownerId { get; set; }
@@ -24,6 +28,25 @@ public class FusionTurret : NetworkBehaviour
         }
     }
 
+    private void ShowTracer(Vector3 startPoint, Vector3 endPoint)
+    {
+        if (tracerLine == null)
+            return;
+
+        StartCoroutine(DoTracer(startPoint, endPoint));
+    }
+
+    private System.Collections.IEnumerator DoTracer(Vector3 startPoint, Vector3 endPoint)
+    {
+        tracerLine.gameObject.SetActive(true);
+        tracerLine.positionCount = 2;
+        tracerLine.SetPosition(0, startPoint);
+        tracerLine.SetPosition(1, endPoint);
+
+        yield return new WaitForSeconds(tracerDuration);
+
+        tracerLine.gameObject.SetActive(false);
+    }
     public override void FixedUpdateNetwork()
     {
         if (!HasStateAuthority)
@@ -109,6 +132,12 @@ public class FusionTurret : NetworkBehaviour
         return bestTarget;
     }
 
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_ShowTracer(Vector3 startPoint, Vector3 endPoint)
+    {
+        ShowTracer(startPoint, endPoint);
+    }
+
     private void FireAtTarget(NetworkObject target)
     {
         if (target == null)
@@ -133,7 +162,7 @@ public class FusionTurret : NetworkBehaviour
             amount = damagePerShot,
             hitPoint = hitPoint,
             hitNormal = hitNormal,
-            type = FusionDamageType.Bullet,
+            type = FusionDamageType.Turret,
             instigator = ownerObject
         };
 
@@ -143,5 +172,9 @@ public class FusionTurret : NetworkBehaviour
             health.RPC_ApplyValidatedDamage(data.amount, data.hitPoint, data.hitNormal, data.type, ownerObject != null ? ownerObject.Id : default);
 
         Debug.Log($"Torreta disparó a {target.name}");
+
+        Vector3 tracerStart = firePoint != null ? firePoint.position : transform.position + Vector3.up * 1.2f;
+        Vector3 tracerEnd = hitPoint;
+        RPC_ShowTracer(tracerStart, tracerEnd);
     }
 }

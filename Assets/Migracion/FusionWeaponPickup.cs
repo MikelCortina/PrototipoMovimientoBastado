@@ -11,8 +11,29 @@ public class FusionWeaponPickup : NetworkBehaviour
     public Color rarityColor = Color.white;
 
     private bool _collected = false;
+    private FusionPickupSpawner _spawner;
 
     public override void Spawned()
+    {
+        _collected = false;
+        ApplyVisuals();
+    }
+
+    public void SetSpawner(FusionPickupSpawner spawner)
+    {
+        _spawner = spawner;
+    }
+
+    public void ConfigurePickup(int newWeaponIndex, Color newRarityColor, FusionPickupSpawner spawner)
+    {
+        weaponIndex = newWeaponIndex;
+        rarityColor = newRarityColor;
+        _spawner = spawner;
+
+        ApplyVisuals();
+    }
+
+    private void ApplyVisuals()
     {
         if (pickupRenderer != null && pickupRenderer.material != null)
         {
@@ -41,6 +62,9 @@ public class FusionWeaponPickup : NetworkBehaviour
 
         if (Object.HasStateAuthority)
         {
+            if (_spawner != null)
+                _spawner.NotifyPickupCollected(Object);
+
             Runner.Despawn(Object);
         }
     }

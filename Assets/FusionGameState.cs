@@ -144,7 +144,7 @@ public class FusionGameState : NetworkBehaviour
             amount = airStrikeDamage,
             hitPoint = hitPoint,
             hitNormal = hitNormal,
-            type = FusionDamageType.Explosion,
+            type = FusionDamageType.AirStrike,
             instigator = instigatorObject
         };
 
@@ -196,9 +196,9 @@ public class FusionGameState : NetworkBehaviour
     }
 
     [Header("Killstreaks - Granada")]
-    [SerializeField] private float grenadeDamage = 60f;
-    [SerializeField] private float grenadeRadius = 6f;
-    [SerializeField] private float grenadeRange = 18f;
+    [SerializeField] private NetworkObject grenadePrefab;
+    [SerializeField] private float grenadeThrowForce = 16f;
+    [SerializeField] private float grenadeUpwardForce = 5f;
     [SerializeField] private LayerMask grenadeHitMask = ~0;
 
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
@@ -209,6 +209,12 @@ public class FusionGameState : NetworkBehaviour
 
         if (currentMatchState != MatchState.Playing)
             return;
+
+        if (grenadePrefab == null)
+        {
+            Debug.LogWarning("No hay grenadePrefab asignado en FusionGameState.");
+            return;
+        }
 
         if (!Runner.TryFindObject(instigatorId, out NetworkObject instigatorObject))
             return;
@@ -228,57 +234,29 @@ public class FusionGameState : NetworkBehaviour
         else
             instigatorState.RPC_ConsumeGrenadeStreak();
 
-        Vector3 explosionPoint = origin + forward.normalized * grenadeRange;
+        Vector3 throwDirection = forward;
+        if (throwDirection.sqrMagnitude < 0.001f)
+            throwDirection = Vector3.forward;
 
-        if (Physics.Raycast(origin, forward.normalized, out RaycastHit hit, grenadeRange, grenadeHitMask, QueryTriggerInteraction.Ignore))
-            explosionPoint = hit.point;
+        throwDirection.Normalize();
 
-        ProcessGrenadeExplosion(instigatorObject, explosionPoint);
-    }
+        Vector3 spawnPosition = origin + throwDirection * 1.2f + Vector3.up * 1.2f;
 
-    private void ProcessGrenadeExplosion(NetworkObject instigatorObject, Vector3 explosionPoint)
-    {
-        Collider[] hits = Physics.OverlapSphere(explosionPoint, grenadeRadius, grenadeHitMask, QueryTriggerInteraction.Ignore);
+        NetworkObject grenadeObject = Runner.Spawn(
+            grenadePrefab,
+            spawnPosition,
+            Quaternion.identity,
+            default
+        );
 
-        for (int i = 0; i < hits.Length; i++)
+        FusionGrenadeProjectile grenade = grenadeObject.GetComponent<FusionGrenadeProjectile>();
+        if (grenade != null)
         {
-            IFusionDamageable damageable = hits[i].GetComponentInParent<IFusionDamageable>();
-            if (damageable == null)
-                continue;
-
-            NetworkObject hitObject = hits[i].GetComponentInParent<NetworkObject>();
-            if (hitObject == null)
-                continue;
-
-            if (instigatorObject != null && hitObject.Id == instigatorObject.Id)
-                continue;
-
-            Vector3 hitPoint = hits[i].ClosestPoint(explosionPoint);
-            Vector3 hitNormal = (hitPoint - explosionPoint).normalized;
-
-            FusionDamageData data = new FusionDamageData
-            {
-                amount = grenadeDamage,
-                hitPoint = hitPoint,
-                hitNormal = hitNormal,
-                type = FusionDamageType.Explosion,
-                instigator = instigatorObject
-            };
-
-            FusionHealthSystem health = hitObject.GetComponent<FusionHealthSystem>();
-            if (health == null)
-                health = hitObject.GetComponentInParent<FusionHealthSystem>();
-
-            if (health == null)
-                continue;
-
-            if (health.HasStateAuthority)
-                health.ApplyValidatedDamage(data);
-            else
-                health.RPC_ApplyValidatedDamage(data.amount, data.hitPoint, data.hitNormal, data.type, instigatorObject != null ? instigatorObject.Id : default);
+            Vector3 initialVelocity = throwDirection * grenadeThrowForce + Vector3.up * grenadeUpwardForce;
+            grenade.Initialize(instigatorObject, initialVelocity);
         }
 
-        Debug.Log($"Granada explotó en {explosionPoint} con radio {grenadeRadius}");
+        Debug.Log($"Granada lanzada por {instigatorObject.name}");
     }
     public static FusionGameState Instance { get; private set; }
 
