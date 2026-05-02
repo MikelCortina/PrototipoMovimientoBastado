@@ -11,7 +11,9 @@ public interface IFusionDamageable
 public enum FusionDamageType
 {
     Bullet,
-    Explosion,
+    Grenade,
+    AirStrike,
+    Turret,
     Fall,
     Gas
 }

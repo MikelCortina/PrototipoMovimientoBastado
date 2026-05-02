@@ -138,6 +138,21 @@ public class FusionMovement : NetworkBehaviour
 
     public override void FixedUpdateNetwork()
     {
+
+        if (FusionGameState.Instance != null &&
+    FusionGameState.Instance.currentMatchState == MatchState.Finished)
+        {
+            if (rb == null)
+                rb = GetComponent<Rigidbody>();
+
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+
+            return;
+        }
         // Obtenemos el input sincronizado por la red
         if (GetInput(out NetworkInputData input))
         {
