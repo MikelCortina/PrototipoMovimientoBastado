@@ -131,6 +131,12 @@ public class FusionPlayerState : NetworkBehaviour
             turretRewardGrantedThisStreak = false;
         }
     }
+    [Rpc(RpcSources.StateAuthority, RpcTargets.InputAuthority)]
+    private void RPC_ShowStreakUnlockedMessage(string message)
+    {
+        if (FusionStreakMessageUI.Instance != null)
+            FusionStreakMessageUI.Instance.ShowMessage(message);
+    }
 
     public void SetPlayerName(string newName)
     {
@@ -166,18 +172,21 @@ public class FusionPlayerState : NetworkBehaviour
         {
             hasGrenadeStreak = true;
             grenadeRewardGrantedThisStreak = true;
+            RPC_ShowStreakUnlockedMessage("Granada desbloqueada - pulsa Z");
         }
 
         if (killStreak >= 5 && !airStrikeRewardGrantedThisStreak)
         {
             hasAirStrikeStreak = true;
             airStrikeRewardGrantedThisStreak = true;
+            RPC_ShowStreakUnlockedMessage("Ataque aéreo desbloqueado - pulsa X");
         }
 
         if (killStreak >= 10 && !turretRewardGrantedThisStreak)
         {
             hasTurretStreak = true;
             turretRewardGrantedThisStreak = true;
+            RPC_ShowStreakUnlockedMessage("Torreta desbloqueada - pulsa C");
         }
 
         Debug.Log($"AddKill | object: {name} | kills: {kills} | score: {score} | streak: {killStreak} | grenade: {hasGrenadeStreak} | air: {hasAirStrikeStreak} | turret: {hasTurretStreak} | HasStateAuthority: {HasStateAuthority}");
