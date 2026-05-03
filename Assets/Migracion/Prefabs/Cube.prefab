@@ -1388,7 +1388,17 @@ PrefabInstance:
       propertyPath: m_Name
       value: T-Pose
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 5245602764605225057, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 5772952261507016601, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 4659061140552835664, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 5430663604970672847, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 8707631351868438330, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 7081559755051619086, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 2860943973535745018, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 5945584068747468220, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 3906662832944974664, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
+    - {fileID: 3069124227533752329, guid: af05b7f2e76f1044b8acf648be4d70e7, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
